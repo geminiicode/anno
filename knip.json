@@ -1,0 +1,18 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "preload.js",
+    "index.html",
+    "core/lib.js",
+    "renderer/main.js",
+    "scripts/*.mjs",
+    "test/**/*.test.{js,mjs}"
+  ],
+  "project": [
+    "cli/**/*.js",
+    "core/**/*.js",
+    "renderer/**/*.js",
+    "scripts/**/*.mjs",
+    "test/**/*.{js,mjs}"
+  ]
+}

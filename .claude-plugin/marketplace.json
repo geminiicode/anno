@@ -1,0 +1,15 @@
+{
+  "name": "anno",
+  "description": "Google-Docs-style markdown commenting with an AI review loop — review files in a margin-comment editor and have Claude address your comments.",
+  "owner": {
+    "name": "geminiicode",
+    "url": "https://github.com/geminiicode"
+  },
+  "plugins": [
+    {
+      "name": "anno",
+      "description": "Markdown comment editor with an AI review loop powered by your own Claude Code.",
+      "source": "./"
+    }
+  ]
+}

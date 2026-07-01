@@ -1,0 +1,9 @@
+{
+  "name": "anno",
+  "description": "Open a markdown file in a Google-Docs-style comment editor and let Claude address your comments. Wraps the `anno` CLI.",
+  "version": "0.3.0",
+  "author": {
+    "name": "geminiicode"
+  },
+  "homepage": "https://github.com/geminiicode/anno"
+}

@@ -1,0 +1,18 @@
+# bare name (no slash) so a worktree node_modules *symlink* is ignored too, not just the dir
+node_modules
+
+# Build output
+dist/
+out/
+
+# Comment sidecars are per-user document data, not source
+*.comments.json
+.*.comments.json
+
+# Logs / OS cruft
+*.log
+.DS_Store
+
+# Local Claude Code settings + transient worktrees
+.claude/settings.local.json
+.claude/worktrees/

@@ -1,0 +1,132 @@
+#addCommentBtn {
+  position: absolute;
+  z-index: 50;
+  font-size: 13px;
+  padding: 6px 12px;
+  background: var(--accent);
+  color: var(--on-accent);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+}
+#addCommentBtn .kbd {
+  margin-left: 6px;
+  opacity: 0.7;
+  font-size: 11px;
+}
+
+/* absolutely positioned within a tall list that grows to fit all cards, so the pane scrolls */
+#commentList {
+  position: relative;
+}
+.comment-card {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: top 0.12s ease;
+}
+/* Suppress the top-transition while renderComments() rebuilds cards, so they
+   appear in place instead of animating in from top:0. */
+#commentList.no-anim .comment-card { transition: none; }
+.comment-card.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(47,111,235,0.15); }
+.comment-card.resolved { opacity: 0.6; }
+/* Tint while working — pairs with 👀 without competing with .active's border. */
+.comment-card.working { background: var(--highlight); }
+.comment-card .quote {
+  font-size: 12px;
+  color: var(--muted);
+  border-left: 3px solid var(--highlight-active);
+  padding-left: 8px;
+  margin-bottom: 6px;
+  font-style: italic;
+  white-space: pre-wrap;
+}
+.comment-card .body { white-space: pre-wrap; line-height: 1.45; }
+.comment-card .meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.comment-card .actions { display: flex; gap: 8px; }
+.comment-card .actions button {
+  font-size: 11px;
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+}
+.comment-card .actions button.danger { color: var(--danger); }
+
+/* pointer-events off so the header's Hide-resolved toggle stays clickable
+   through the centered placeholder. */
+#commentList.is-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.comment-empty {
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 0 24px;
+  max-width: 260px;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 10px;
+  margin-top: 8px;
+}
+.badge.open { background: var(--badge-open-bg); color: var(--badge-open-text); }
+.badge.addressed { background: var(--badge-addressed-bg); color: var(--badge-addressed-text); }
+.badge.resolved { background: var(--badge-resolved-bg); color: var(--muted); }
+
+/* Anchored to the card's top-right — the card is position:absolute, so it's
+   the offset parent; the quote's padding-right keeps text clear of the chip. */
+.reaction {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  font-size: 15px;
+  line-height: 1;
+  user-select: none;
+}
+.comment-card .quote { padding-right: 22px; }
+.reaction.working { animation: reaction-pulse 1.6s ease-in-out infinite; }
+@keyframes reaction-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reaction.working { animation: none; opacity: 1; }
+}
+
+.replies { margin-top: 6px; }
+.reply {
+  border-left: 2px solid var(--border);
+  padding: 6px 0 2px 8px;
+  margin-top: 6px;
+}
+.reply.ai { border-left-color: var(--ai-accent); }
+.reply-meta { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+.reply-body { white-space: pre-wrap; line-height: 1.4; }

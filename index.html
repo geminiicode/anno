@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file:; form-action 'none'; base-uri 'none';" />
+  <title>anno</title>
+  <!-- tokens first; every other sheet reads its CSS variables. Rest are ID-scoped and order-independent. -->
+  <link rel="stylesheet" href="styles/tokens.css" />
+  <link rel="stylesheet" href="styles/shell.css" />
+  <link rel="stylesheet" href="styles/tabs.css" />
+  <link rel="stylesheet" href="styles/layout.css" />
+  <link rel="stylesheet" href="styles/document.css" />
+  <link rel="stylesheet" href="styles/diff.css" />
+  <link rel="stylesheet" href="styles/comments.css" />
+  <link rel="stylesheet" href="styles/composer.css" />
+  <link rel="stylesheet" href="styles/help.css" />
+</head>
+<body>
+  <div id="toolbar">
+    <span id="currentFile"></span>
+    <button id="toggleSidebarBtn" class="icon-btn" data-tooltip="Hide file sidebar" aria-label="Toggle file sidebar">
+      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
+        <line x1="6" y1="3.4" x2="6" y2="12.6" stroke="currentColor" stroke-width="1.2"/>
+        <rect x="2.7" y="3.7" width="2.6" height="8.6" rx="0.6" fill="currentColor" opacity="0.3"/>
+      </svg>
+    </button>
+    <button id="toggleCommentsBtn" class="icon-btn" data-tooltip="Hide comments" aria-label="Toggle comments">
+      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
+        <line x1="10" y1="3.4" x2="10" y2="12.6" stroke="currentColor" stroke-width="1.2"/>
+        <rect x="10.7" y="3.7" width="2.6" height="8.6" rx="0.6" fill="currentColor" opacity="0.3"/>
+      </svg>
+    </button>
+    <button id="helpBtn" class="icon-btn" data-tooltip="Help" aria-label="Help">
+      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <circle cx="8" cy="8" r="6.4" stroke="currentColor" stroke-width="1.2"/>
+        <path d="M6.1 6.1c0-1 0.8-1.7 1.9-1.7s1.8 0.7 1.8 1.6c0 0.8-0.5 1.2-1.1 1.6-0.5 0.3-0.7 0.6-0.7 1.1v0.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        <circle cx="8" cy="11.4" r="0.75" fill="currentColor"/>
+      </svg>
+    </button>
+  </div>
+
+  <div id="tabBar" hidden></div>
+
+  <div id="layout">
+    <aside id="sidebar">
+      <div class="sidebar-header">Files</div>
+      <ul id="fileList"></ul>
+    </aside>
+
+    <main id="docPane">
+      <article id="content"></article>
+    </main>
+
+    <aside id="commentPane">
+      <div class="sidebar-header"><span>Comments</span><button id="toggleResolvedBtn" class="header-action">Hide resolved</button></div>
+      <div id="commentList"></div>
+    </aside>
+  </div>
+
+  <button id="addCommentBtn" hidden>💬 Comment</button>
+
+  <div id="helpOverlay" hidden>
+    <div id="helpPanel" role="dialog" aria-modal="true" aria-label="anno help">
+      <header id="helpHeader">
+        <span>Help</span>
+        <button id="helpCloseBtn" class="header-action" aria-label="Close help">Close</button>
+      </header>
+      <div id="helpBody" class="markdown-help"></div>
+    </div>
+  </div>
+
+  <script src="./node_modules/marked/marked.min.js"></script>
+  <script src="./node_modules/dompurify/dist/purify.min.js"></script>
+  <script src="core/lib.js"></script>
+  <script type="module" src="renderer/main.js"></script>
+</body>
+</html>

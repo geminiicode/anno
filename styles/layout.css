@@ -1,0 +1,94 @@
+#layout {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: 240px 1fr 320px;
+  min-height: 0;
+}
+body.sidebar-collapsed #sidebar { display: none; }
+body.comments-collapsed #commentPane { display: none; }
+body.sidebar-collapsed #layout { grid-template-columns: 1fr 320px; }
+body.comments-collapsed #layout { grid-template-columns: 240px 1fr; }
+body.sidebar-collapsed.comments-collapsed #layout { grid-template-columns: 1fr; }
+
+#sidebar {
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  background: var(--bg-alt);
+}
+
+#commentPane {
+  border-left: 1px solid var(--border);
+  background: var(--bg-alt);
+  position: relative;
+  overflow-y: auto; /* scrollable; cards positioned in doc coords, scroll mirrors the doc */
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  padding: 12px 14px 6px;
+  position: sticky;
+  top: 0;
+  background: var(--bg-alt);
+  /* keep above the .comment-cards that scroll under it, else they steal the toggle's clicks */
+  z-index: 1;
+}
+.header-action {
+  -webkit-app-region: no-drag;
+  font: inherit;
+  font-size: 10px;
+  color: var(--muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.header-action:hover { color: var(--text); background: var(--surface-hover); }
+.header-action.active { color: var(--accent); }
+
+#fileList { list-style: none; margin: 0; padding: 0 6px 12px; }
+#fileList li {
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#fileList li:hover { background: var(--surface-hover); }
+#fileList li.active { background: var(--accent); color: var(--on-accent); }
+
+.tree-folder { font-weight: 500; cursor: pointer; user-select: none; }
+.tree-folder .tw {
+  display: inline-block;
+  width: 14px;
+  color: var(--muted);
+  font-size: 9px;
+  vertical-align: middle;
+}
+
+#docPane { overflow-y: auto; }
+
+/* JS toggles .scrolling to show the bar only on the actively-scrolled pane;
+   gutter reserved on both so toggling the thumb never reflows content. */
+#docPane::-webkit-scrollbar,
+#commentPane::-webkit-scrollbar { width: 10px; }
+#docPane::-webkit-scrollbar-thumb,
+#commentPane::-webkit-scrollbar-thumb {
+  background: transparent;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 8px;
+  transition: background 0.25s ease;
+}
+#docPane.scrolling::-webkit-scrollbar-thumb,
+#commentPane.scrolling::-webkit-scrollbar-thumb { background: var(--border-strong); }

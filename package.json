@@ -1,0 +1,60 @@
+{
+  "name": "anno-md",
+  "version": "0.3.0",
+  "description": "Desktop markdown viewer with Google-Docs-style commenting and an AI review loop powered by your own Claude Code",
+  "main": "main.js",
+  "bin": {
+    "anno": "anno.js"
+  },
+  "scripts": {
+    "prestart": "node scripts/worktree-link.mjs",
+    "start": "electron .",
+    "pretest": "node scripts/worktree-link.mjs",
+    "test": "node --test",
+    "knip": "npx --yes knip@6.23.0"
+  },
+  "files": [
+    "main.js",
+    "preload.js",
+    "renderer/",
+    "core/",
+    "index.html",
+    "styles/",
+    "anno.js",
+    "cli/",
+    "sample.md",
+    "HELP.md"
+  ],
+  "keywords": [
+    "anno",
+    "markdown",
+    "comments",
+    "annotations",
+    "review",
+    "electron",
+    "claude",
+    "claude-code",
+    "ai"
+  ],
+  "author": "geminiicode",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/geminiicode/anno.git"
+  },
+  "homepage": "https://github.com/geminiicode/anno#readme",
+  "bugs": {
+    "url": "https://github.com/geminiicode/anno/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dompurify": "^3.2.0",
+    "electron": "^33.0.0",
+    "marked": "^14.1.0"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
+  }
+}

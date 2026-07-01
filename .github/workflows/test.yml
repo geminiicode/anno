@@ -1,0 +1,38 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # Tests need jsdom (renderer DOM coverage) but not the Electron binary —
+      # skip its heavy postinstall download, install the rest.
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+      - run: node --test
+      - name: Syntax-check sources
+        run: |
+          # CommonJS modules (editor main process, preload, CLI, shared libs).
+          for f in $(git ls-files '*.js' ':!:renderer/**'); do
+            node --check "$f"
+          done
+          # Renderer ES modules: copy to .mjs so node parses them as modules
+          # (--check only parses syntax; it does not resolve the imports).
+          tmp="$(mktemp -d)"
+          for f in renderer/*.js; do
+            cp "$f" "$tmp/$(basename "${f%.js}").mjs"
+            node --check "$tmp/$(basename "${f%.js}").mjs"
+          done
+      # --check doesn't resolve imports and the renderer can't be imported
+      # headless (touches document), so verify the import graph statically.
+      - name: Check renderer import graph
+        run: node scripts/check-imports.mjs

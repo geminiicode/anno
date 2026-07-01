@@ -1,0 +1,69 @@
+:root {
+  color-scheme: light;
+  --bg: #ffffff;            /* document / content surface */
+  --bg-alt: #f7f8fa;        /* chrome: toolbar, sidebars, code blocks */
+  --surface: #ffffff;       /* raised: cards, buttons, inputs */
+  --surface-hover: #eceef1;
+  --surface-active: #e9ecf0;
+  --border: #e3e6ea;
+  --border-strong: #cfd4da;
+  --text: #1f2328;
+  --muted: #6a737d;
+  --accent: #2f6feb;
+  --accent-hover: #2861d8;
+  --accent-active: #2357c4;
+  --on-accent: #ffffff;     /* text/icons on an accent fill */
+  --highlight: #fff3bf;
+  --highlight-active: #ffe066;
+  --highlight-resolved: #e9ecef;
+  /* semantic accents (diff banner, diff rows, badges, AI replies) */
+  --info-bg: #eef4ff;
+  --info-text: #1b4fb3;
+  --add-bg: #e6ffed;
+  --add-text: #1d6b2c;
+  --del-bg: #ffeef0;
+  --del-text: #d1242f;
+  --danger: #d1242f;
+  --badge-open-bg: #fff3bf;
+  --badge-open-text: #8a6d00;
+  --badge-addressed-bg: #d3f9d8;
+  --badge-addressed-text: #1d6b2c;
+  --badge-resolved-bg: #e9ecef;
+  --ai-accent: #69db7c;
+}
+
+/* Only token values change; every rule below is already driven off these variables. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #1e2127;
+    --bg-alt: #181a1f;
+    --surface: #24272e;
+    --surface-hover: #2d313a;
+    --surface-active: #343943;
+    --border: #30343c;
+    --border-strong: #3d424c;
+    --text: #e6e8eb;
+    --muted: #9aa3ad;
+    --accent: #4d8bff;
+    --accent-hover: #5f98ff;
+    --accent-active: #3f7ef0;
+    --on-accent: #ffffff;
+    --highlight: #5c4a1f;
+    --highlight-active: #7a6320;
+    --highlight-resolved: #2d313a;
+    --info-bg: #1b2740;
+    --info-text: #9cc0ff;
+    --add-bg: #16301f;
+    --add-text: #5dd07a;
+    --del-bg: #3a1d22;
+    --del-text: #ff8a93;
+    --danger: #ff8a93;
+    --badge-open-bg: #4a3c14;
+    --badge-open-text: #f0d680;
+    --badge-addressed-bg: #16301f;
+    --badge-addressed-text: #5dd07a;
+    --badge-resolved-bg: #2d313a;
+    --ai-accent: #4caf6a;
+  }
+}
