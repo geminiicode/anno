@@ -13,7 +13,7 @@ highlight + comment  ──▶  anno revises via your Claude Code  ──▶  ed
 ## Getting started
 
 ```bash
-npm i -g anno-md
+npm i -g github:geminiicode/anno
 ```
 
 Requires Node 18+ and an authenticated [Claude Code](https://code.claude.com/docs) `claude` CLI on your `PATH`. The editor is [Electron](https://www.electronjs.org/), so the install downloads its runtime (~100&nbsp;MB) the first time.

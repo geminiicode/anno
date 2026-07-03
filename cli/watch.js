@@ -219,8 +219,8 @@ function watch(target, { ownSigint = true } = {}) {
     queue.enqueue(resolved);
   }
 
-  console.log(`Watching ${label} for new comments (Ctrl-C to stop)…`);
-  // review() owns SIGINT (tears down editor); don't add a second handler
+  // Install SIGINT before the banner so a Ctrl-C in the gap can't hit the default disposition.
+  // review() owns SIGINT (tears down editor); don't add a second handler.
   if (ownSigint) {
     process.on('SIGINT', () => {
       close();
@@ -228,6 +228,7 @@ function watch(target, { ownSigint = true } = {}) {
       process.exit(0);
     });
   }
+  console.log(`Watching ${label} for new comments (Ctrl-C to stop)…`);
 
   // A parent crash / kill -9 skips the SIGINT teardown and would orphan this
   // daemon — an agent still auto-editing with no window. Exit when reparented.

@@ -133,7 +133,7 @@ if (!app.requestSingleInstanceLock()) {
     if (target) sendTarget(win, target);
   });
 
-  app.setAboutPanelOptions({ applicationName: 'anno', applicationVersion: '0.3.0' });
+  app.setAboutPanelOptions({ applicationName: 'anno', applicationVersion: require('./package.json').version });
 
   app.whenReady().then(() => {
     const win = createWindow();

@@ -124,20 +124,23 @@ function buildPrompt(mdPath, openComments, seen = null, manifest = null) {
 // the raw signals (see addressCore).
 function runClaude(prompt, cwd, { sessionId, name } = {}) {
   return new Promise((resolve, reject) => {
+    // Fence Read/Edit to the review tree: the doc + comments are in the prompt, so a prompt-
+    // injecting doc can drive Edit — bare `Read,Edit` would auto-approve any writable path
+    // (~/.zshrc, ~/.ssh). Out-of-tree calls fall to a prompt, which headless -p denies.
+    const root = cwd || process.cwd();
     const args = [
       '-p',
       '--permission-mode',
       'acceptEdits',
-      // Edit is NOT dir-sandboxed — a prompt-injecting doc can modify any existing file the user can write (no-Write only blocks new-file creation). Trust model: only review files you trust.
       '--allowedTools',
-      'Read,Edit',
+      `Read(/${root}/**),Edit(/${root}/**)`,
       '--output-format',
       'json',
     ];
     // name only on create — a resumed session already carries the name set at creation
     if (sessionId) args.push('--resume', sessionId);
     else if (name) args.push('--name', name);
-    const child = spawn('claude', args, { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn('claude', args, { cwd: root, stdio: ['pipe', 'pipe', 'pipe'] });
     activeChild = child;
     let stdout = '';
     let stderr = '';

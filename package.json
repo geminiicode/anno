@@ -1,6 +1,6 @@
 {
   "name": "anno-md",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "Desktop markdown viewer with Google-Docs-style commenting and an AI review loop powered by your own Claude Code",
   "main": "main.js",
   "bin": {
