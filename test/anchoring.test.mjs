@@ -93,13 +93,13 @@ test('applyHighlights wraps an anchored quote and flags an orphan', () => {
   applyHighlights();
 
   // Anchored comment: not orphaned, and a highlight span carries its id.
-  assert.equal(anchors.get('hit').orphaned, false);
+  assert.equal(anchors.get('hit').detached, false);
   const span = contentEl.querySelector('.comment-highlight[data-comment-id="hit"]');
   assert.ok(span, 'anchored quote should be wrapped in a highlight span');
   assert.equal(span.textContent, 'quick');
 
   // Orphaned comment: flagged, no span.
-  assert.equal(anchors.get('miss').orphaned, true);
+  assert.equal(anchors.get('miss').detached, true);
   assert.equal(contentEl.querySelector('.comment-highlight[data-comment-id="miss"]'), null);
 });
 
@@ -115,7 +115,7 @@ test('a working comment holds its highlight at last offsets when its quote no lo
 
   applyHighlights();
 
-  assert.equal(anchors.get('busy').orphaned, false, 'working comment should not orphan on a quote miss');
+  assert.equal(anchors.get('busy').detached, false, 'working comment should not orphan on a quote miss');
   const span = contentEl.querySelector('.comment-highlight[data-comment-id="busy"]');
   assert.ok(span, 'highlight should persist while Claude is addressing the comment');
   assert.equal(span.textContent, 'nimbl', 'held highlight sits at the last-known offsets');
@@ -135,7 +135,7 @@ test('a working comment with a fresh workingSince holds its highlight (the commo
 
   applyHighlights();
 
-  assert.equal(anchors.get('fresh').orphaned, false, 'a fresh working comment should hold, not orphan');
+  assert.equal(anchors.get('fresh').detached, false, 'a fresh working comment should hold, not orphan');
   const span = contentEl.querySelector('.comment-highlight[data-comment-id="fresh"]');
   assert.ok(span, 'highlight persists for a freshly-marked working comment');
   assert.equal(span.textContent, 'nimbl');
@@ -152,7 +152,7 @@ test('a working comment whose offsets exceed the shrunken doc orphans, does not 
   });
 
   assert.doesNotThrow(() => applyHighlights());
-  assert.equal(anchors.get('past').orphaned, true, 'offsets past the doc end orphan the comment');
+  assert.equal(anchors.get('past').detached, true, 'offsets past the doc end orphan the comment');
   assert.equal(contentEl.querySelector('.comment-highlight[data-comment-id="past"]'), null);
 });
 
@@ -168,13 +168,13 @@ test('a stale working flag does not resurrect a highlight for a gone quote', () 
 
   applyHighlights();
 
-  assert.equal(anchors.get('stale').orphaned, true, 'a stale working flag falls back to orphaning');
+  assert.equal(anchors.get('stale').detached, true, 'a stale working flag falls back to orphaning');
   assert.equal(contentEl.querySelector('.comment-highlight[data-comment-id="stale"]'), null);
 });
 
-test('a comment whose quote was removed anchors a caret at its last-known spot, kept in text order', () => {
-  // quote removed entirely (neither quote nor held offsets resolve) but context present → anchor a
-  // zero-width caret and refresh start to it, so the card keeps doc-order instead of sinking.
+test('a comment whose quote was removed is detached and refreshes start to the context gap', () => {
+  // quote removed entirely (neither quote nor held offsets resolve) but context present → NO in-doc
+  // marker; refresh start to where the text was so the card lays out at that gap and keeps its order.
   setContent('<p>Before the gap after</p>');
   store.loadDoc({
     filePath: '/x/doc.md',
@@ -186,15 +186,14 @@ test('a comment whose quote was removed anchors a caret at its last-known spot, 
 
   applyHighlights();
 
-  const caret = contentEl.querySelector('.comment-highlight.caret[data-comment-id="gone"]');
-  assert.ok(caret, 'a caret marker is painted where the removed quote used to be');
-  assert.equal(anchors.get('gone').orphaned, false, 'a caret-anchored comment is not orphaned');
+  assert.equal(anchors.get('gone').detached, true, 'a quote-removed comment is detached (no live span)');
+  assert.equal(contentEl.querySelector('.comment-highlight[data-comment-id="gone"]'), null, 'no marker injected into the document');
   const c = store.state.comments.find((x) => x.id === 'gone');
-  assert.equal(c.start, 'Before '.length, 'start refreshed to the caret offset (just after the prefix)');
-  assert.equal(c.end, c.start, 'the caret is zero-width');
+  assert.equal(c.start, 'Before '.length, 'start refreshed to the context gap (just after the prefix), so it sorts in place');
+  assert.equal(c.end, c.start);
 });
 
-test('a removed-quote comment with no matching context still orphans (no caret)', () => {
+test('a removed-quote comment with no matching context is detached and keeps its last-known offset', () => {
   setContent('<p>totally different text</p>');
   store.loadDoc({
     filePath: '/x/doc.md',
@@ -206,8 +205,10 @@ test('a removed-quote comment with no matching context still orphans (no caret)'
 
   applyHighlights();
 
-  assert.equal(anchors.get('nocontext').orphaned, true, 'no context match → orphaned');
-  assert.equal(contentEl.querySelector('.comment-highlight[data-comment-id="nocontext"]'), null, 'no caret without a context match');
+  assert.equal(anchors.get('nocontext').detached, true, 'no span → detached');
+  assert.equal(contentEl.querySelector('.comment-highlight[data-comment-id="nocontext"]'), null, 'nothing injected');
+  const c = store.state.comments.find((x) => x.id === 'nocontext');
+  assert.equal(c.start, 4, 'no context match → start stays at its last-known offset, so order is preserved');
 });
 
 test('the pending selection is highlighted while composing, and cleared when discarded', () => {
@@ -303,8 +304,8 @@ test('image comment anchors to its <img> by src and survives re-highlight', () =
 
   const img = contentEl.querySelector('img.comment-highlight[data-comment-id="img-hit"]');
   assert.ok(img, 'image comment should ring its <img>');
-  assert.equal(anchors.get('img-hit').orphaned, false);
-  assert.equal(anchors.get('img-miss').orphaned, true);
+  assert.equal(anchors.get('img-hit').detached, false);
+  assert.equal(anchors.get('img-miss').detached, true);
 
   // Anchored image gets a finite inline offset (length of "before") so it sorts
   // by document position, not to the bottom alongside the orphan.

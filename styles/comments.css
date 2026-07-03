@@ -42,6 +42,14 @@
 .comment-card.resolved { opacity: 0.6; }
 /* Tint while working — pairs with 👀 without competing with .active's border. */
 .comment-card.working { background: var(--highlight); }
+/* Detached: the quoted text was removed from the doc. Grey + strike the quote so the card reads as
+   "anchor gone" while still holding its document-order slot. */
+.comment-card.detached .quote {
+  border-left-color: var(--muted);
+  border-left-style: dashed;
+  text-decoration: line-through;
+  opacity: 0.7;
+}
 .comment-card .quote {
   font-size: 12px;
   color: var(--muted);

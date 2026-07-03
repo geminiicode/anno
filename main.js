@@ -182,11 +182,30 @@ ipcMain.handle('fs:readFile', async (event, filePath) => {
 // HELP.md ships in the app bundle; renderer needn't know the path.
 ipcMain.handle('help:read', () => fs.readFile(path.join(__dirname, 'HELP.md'), 'utf8'));
 
+// Sidecar paths we've already warned the user are corrupt — the watcher re-reads on every change,
+// so without this each event would fire another dialog. Cleared on a clean read so a later
+// re-corruption warns again.
+const corruptWarned = new Set();
+
 ipcMain.handle('comments:read', async (event, mdPath) => {
   try {
-    return sidecar.readComments(mdPath);
-  } catch {
-    // Corrupt sidecar already backed up to .corrupt by readComments; empty list loses nothing.
+    const comments = sidecar.readComments(mdPath);
+    corruptWarned.delete(sidecar.sidecarPath(mdPath)); // recovered — re-arm the warning
+    return comments;
+  } catch (err) {
+    // Corrupt sidecar: readComments backed it up to .corrupt and threw. Returning [] keeps the app
+    // usable, but a silent empty list reads as "my comments vanished" — surface it once so the user
+    // knows they're recoverable from the backup.
+    const p = err?.path || sidecar.sidecarPath(mdPath);
+    if (!corruptWarned.has(p)) {
+      corruptWarned.add(p);
+      dialog.showMessageBox(BrowserWindow.fromWebContents(event.sender), {
+        type: 'warning',
+        title: 'Comments could not be loaded',
+        message: `The comments file for ${path.basename(mdPath)} is corrupted and couldn’t be read.`,
+        detail: `Your comments are safe — a backup was saved to:\n${p}.corrupt\n\nThe editor is showing an empty comment list for now. Fix or remove the corrupted file, then reopen the document to restore them.`,
+      });
+    }
     return [];
   }
 });

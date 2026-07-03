@@ -38,7 +38,12 @@ export function renderComments() {
     if (c.status === 'resolved') card.classList.add('resolved');
     card.dataset.commentId = c.id;
 
-    const orphanTag = anchors.get(c.id)?.orphaned ? ' · ⚠︎ orphaned' : '';
+    // detached = the quoted text is gone from the doc, so there's no live highlight. The card keeps
+    // its document-order slot (positioned at the gap) and flags the removal instead of silently
+    // pointing at nothing.
+    const detached = !!anchors.get(c.id)?.detached;
+    if (detached) card.classList.add('detached');
+    const anchorTag = detached ? ' · ⚠︎ quote removed' : '';
     const repliesHtml = (c.replies || [])
       .map((r, ri) => {
         // diff HTML built lazily on first toggle-open, not here — renderHunksHtml is O(m·n)
@@ -67,7 +72,7 @@ export function renderComments() {
       ${statusBadge(c, working)}
       <div class="replies">${repliesHtml}</div>
       <div class="meta">
-        <span>${escapeHtml(c.author || 'Me')} · ${formatDate(c.createdAt)}${orphanTag}</span>
+        <span>${escapeHtml(c.author || 'Me')} · ${formatDate(c.createdAt)}${anchorTag}</span>
         <span class="actions">
           <button class="reply-btn">Reply</button>
           <button class="resolve">${c.status === 'resolved' ? 'Reopen' : 'Resolve'}</button>

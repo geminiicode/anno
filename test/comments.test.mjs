@@ -320,6 +320,30 @@ test('clicking a commented image focuses its comment; an uncommented image opens
   assert.equal(addBtn.hidden, false, 'uncommented image surfaces the add-comment button');
 });
 
+// A comment whose quoted text was removed has no live highlight. Instead of an in-doc marker, the
+// card flags itself detached and keeps its document-order slot (positioned at the gap).
+test('a comment whose quote is gone renders a detached card, no in-doc marker', async () => {
+  const { applyHighlights } = await import('../renderer/anchoring.js');
+  const contentEl = document.getElementById('content');
+  contentEl.innerHTML = '<p>the text here</p>';
+  store.loadDoc({ filePath: '/tmp/doc.md', rawText: 'the text here', comments: [] });
+  store.setComments([{
+    id: 'gone', quote: 'VANISHED', body: 'note', author: 'Me',
+    createdAt: '2026-01-01T00:00:00Z', status: 'open', replies: [], start: 4, end: 9,
+  }]);
+  applyHighlights(); // populates the anchors map renderComments reads
+  renderComments();
+  try {
+    const card = commentList.querySelector('.comment-card[data-comment-id="gone"]');
+    assert.ok(card, 'card rendered');
+    assert.ok(card.classList.contains('detached'), 'card flagged detached');
+    assert.match(card.querySelector('.meta').textContent, /quote removed/, 'meta flags the removal');
+    assert.equal(contentEl.querySelector('.comment-highlight[data-comment-id="gone"]'), null, 'nothing injected into the doc');
+  } finally {
+    contentEl.innerHTML = '';
+  }
+});
+
 // spans are rebuilt by morphdom, so clicks are delegated on contentEl — a click on a text highlight
 // must still focus its comment (and :not(.pending) not swallow the composing selection).
 test('clicking a text highlight focuses its comment via the delegated listener', async () => {

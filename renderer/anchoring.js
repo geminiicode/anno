@@ -3,7 +3,8 @@ import { focusComment } from './comment-layout.js';
 import { getLayout } from './layout.js';
 import { isWorking } from './helpers.js';
 
-// orphaned flag kept off comment objects so they stay serializable; rebuilt each applyHighlights()
+// per-comment anchor status ({ detached: bool }) kept off the comment objects so they stay
+// serializable; rebuilt each applyHighlights(). detached = no live highlight span (quote removed).
 export const anchors = new Map();
 
 // the in-composition selection isn't a comment yet, so it carries no id
@@ -143,24 +144,6 @@ function caretOffset(comment, root = contentEl) {
   return null;
 }
 
-function highlightCaret(offset, comment, root = contentEl) {
-  const range = offsetsToRange(offset, offset, root);
-  if (!range) return false;
-  const span = document.createElement('span');
-  span.className = 'comment-highlight caret';
-  if (comment.status === 'resolved') span.classList.add('resolved');
-  if (comment.id === state.activeId) span.classList.add('active');
-  span.dataset.commentId = comment.id;
-  // empty marker (CSS gives it a caret box) — inserting a real char would shift the offsets of
-  // every later comment computed in this same pass
-  try {
-    range.insertNode(span);
-  } catch {
-    return false;
-  }
-  return true;
-}
-
 function clearHighlights(root = contentEl) {
   for (const el of root.querySelectorAll('.comment-highlight')) {
     // unwrapping an <img> (not a wrapper span) would move its children out and DELETE it; strip marker only
@@ -186,7 +169,7 @@ export function applyHighlights(root = contentEl) {
     if (comment.status === 'resolved' && getLayout().hideResolved) continue;
     if (comment.imageSrc) {
       const img = findImageBySrc(comment.imageSrc, root);
-      anchors.set(comment.id, { orphaned: !img });
+      anchors.set(comment.id, { detached: !img });
       if (img) {
         highlightImage(img, comment);
         // sort inline with text comments: an img has no textContent, so derive its
@@ -200,20 +183,19 @@ export function applyHighlights(root = contentEl) {
       continue;
     }
     const range = locateRange(comment, root);
-    // Claude rewrites the quoted text while addressing, so findAnchor misses and the
-    // highlight would vanish mid-run. Hold it at last-known offsets until the write re-anchors.
-    // start===end (a comment already collapsed to a caret on an earlier pass) yields a collapsed
-    // range that paints no span — fall through to the caret path rather than claim a marker-less anchor
+    // Claude rewrites the quoted text while addressing, so findAnchor misses and the highlight
+    // would vanish mid-run. Hold it at last-known offsets until the write re-anchors. Skip a
+    // collapsed span (start===end) — it paints nothing; let it fall through to the detached path.
     if (!range && isWorking(comment) && comment.start < comment.end) {
       const held = offsetsToRange(comment.start, comment.end, root);
       if (held) {
-        anchors.set(comment.id, { orphaned: false });
+        anchors.set(comment.id, { detached: false });
         highlightRange(held, comment, false, root);
         continue;
       }
     }
     if (range) {
-      anchors.set(comment.id, { orphaned: false });
+      anchors.set(comment.id, { detached: false });
       // refresh offsets from where the quote was found so re-anchored comments (CLI clears start/end) regain a sort position
       const off = rangeToOffsets(range, root);
       if (off) {
@@ -223,16 +205,16 @@ export function applyHighlights(root = contentEl) {
       highlightRange(range, comment, false, root);
       continue;
     }
-    // Quote gone (Claude removed the text, or a hand-edit) — drop a caret where it sat so the card
-    // keeps a live rect and a doc-order slot instead of sinking to the sidebar bottom. Else orphan.
+    // Quote gone (Claude removed the text, or a hand-edit). No in-doc marker — hold the comment's
+    // document position by refreshing start to where the text was (via surviving context), so its
+    // card lays out at that gap and keeps its order. The detached state shows on the sidebar card;
+    // comment-layout derives the card's rect from this offset when there's no live span.
     const caret = caretOffset(comment, root);
-    if (caret != null && highlightCaret(caret, comment, root)) {
+    if (caret != null) {
       comment.start = caret;
       comment.end = caret;
-      anchors.set(comment.id, { orphaned: false });
-      continue;
     }
-    anchors.set(comment.id, { orphaned: true });
+    anchors.set(comment.id, { detached: true });
   }
   highlightPending(root);
 }

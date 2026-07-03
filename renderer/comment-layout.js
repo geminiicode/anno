@@ -14,6 +14,15 @@ function cardTarget(el) {
       `.comment-highlight[data-comment-id="${CSS.escape(el.dataset.commentId)}"]`
     );
     if (anchorEl) rect = anchorEl.getBoundingClientRect();
+    else {
+      // detached comment (quote removed, no live span): position it at the gap where the text was,
+      // via a collapsed Range at its last-known offset — nothing injected into the document
+      const c = state.comments.find((x) => x.id === el.dataset.commentId);
+      if (c && Number.isFinite(c.start)) {
+        const r = offsetsToRange(c.start, c.start);
+        if (r) { try { rect = r.getBoundingClientRect(); } catch { /* no layout (jsdom) */ } }
+      }
+    }
   } else if (state.pendingRange) {
     if (state.pendingRange.imageSrc) {
       const img = findImageBySrc(state.pendingRange.imageSrc);
@@ -51,9 +60,8 @@ export function layoutComments(animate = true) {
 
   const items = cards.map((el) => ({ el, target: cardTarget(el), height: el.offsetHeight }));
 
-  // Cards arrive start-sorted; a card whose anchor has no live rect (mid-rewrite highlight, or an
-  // un-resolvable caret) inherits the preceding card's position instead of sinking to the bottom
-  // via Infinity — the out-of-order bug.
+  // Cards arrive start-sorted; a card whose anchor yields no rect at all (offset out of range)
+  // inherits the preceding card's position instead of sinking to the bottom via Infinity.
   let filled = 0;
   for (const it of items) {
     if (it.target == null) it.target = filled;
