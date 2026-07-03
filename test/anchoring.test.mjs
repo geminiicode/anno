@@ -103,13 +103,15 @@ test('applyHighlights wraps an anchored quote and flags an orphan', () => {
   assert.equal(contentEl.querySelector('.comment-highlight[data-comment-id="miss"]'), null);
 });
 
-test('a working comment holds its highlight at last offsets when its quote no longer matches', () => {
+test('a working comment tracks its highlight onto the rewritten text via surviving context', () => {
+  // quote 'quick' rewritten in place to 'nimble'; findAnchor misses. The held span is bounded by
+  // the surviving prefix/suffix, so it lands on the NEW word, not stale offsets.
   setContent('<p>The nimble brown fox</p>');
   store.loadDoc({
     filePath: '/x/doc.md',
     rawText: '# d',
     comments: [
-      { id: 'busy', quote: 'quick', start: 4, end: 9, status: 'open', working: true, replies: [] },
+      { id: 'busy', quote: 'quick', prefix: 'The ', suffix: ' brown fox', start: 4, end: 9, status: 'open', working: true, replies: [] },
     ],
   });
 
@@ -118,10 +120,10 @@ test('a working comment holds its highlight at last offsets when its quote no lo
   assert.equal(anchors.get('busy').detached, false, 'working comment should not orphan on a quote miss');
   const span = contentEl.querySelector('.comment-highlight[data-comment-id="busy"]');
   assert.ok(span, 'highlight should persist while Claude is addressing the comment');
-  assert.equal(span.textContent, 'nimbl', 'held highlight sits at the last-known offsets');
+  assert.equal(span.textContent, 'nimble', 'held highlight is bounded by context onto the rewritten word');
 });
 
-test('a working comment with a fresh workingSince holds its highlight (the common case)', () => {
+test('a working comment with a fresh workingSince tracks the rewrite (the common case)', () => {
   // prior test hits isWorking's NaN branch; this pins working:true + fresh workingSince
   setContent('<p>The nimble brown fox</p>');
   const freshSince = new Date(Date.now() - 1000).toISOString();
@@ -129,7 +131,7 @@ test('a working comment with a fresh workingSince holds its highlight (the commo
     filePath: '/x/doc.md',
     rawText: '# d',
     comments: [
-      { id: 'fresh', quote: 'quick', start: 4, end: 9, status: 'open', working: true, workingSince: freshSince, replies: [] },
+      { id: 'fresh', quote: 'quick', prefix: 'The ', suffix: ' brown fox', start: 4, end: 9, status: 'open', working: true, workingSince: freshSince, replies: [] },
     ],
   });
 
@@ -138,7 +140,25 @@ test('a working comment with a fresh workingSince holds its highlight (the commo
   assert.equal(anchors.get('fresh').detached, false, 'a fresh working comment should hold, not orphan');
   const span = contentEl.querySelector('.comment-highlight[data-comment-id="fresh"]');
   assert.ok(span, 'highlight persists for a freshly-marked working comment');
-  assert.equal(span.textContent, 'nimbl');
+  assert.equal(span.textContent, 'nimble');
+});
+
+test('a working comment whose quote was REMOVED collapses its context and detaches, no bleed', () => {
+  // 'gone phrase' removed → the context closed up (prefix now abuts suffix). Blind offsets would
+  // paint over the shifted text and bleed onto the next line; context-bounding collapses instead.
+  setContent('<p>Before after</p>');
+  store.loadDoc({
+    filePath: '/x/doc.md',
+    rawText: '# d',
+    comments: [
+      { id: 'removed', quote: 'gone phrase', prefix: 'Before ', suffix: ' after', start: 7, end: 18, status: 'open', working: true, workingSince: new Date(Date.now() - 1000).toISOString(), replies: [] },
+    ],
+  });
+
+  applyHighlights();
+
+  assert.equal(anchors.get('removed').detached, true, 'a removed quote detaches even while working');
+  assert.equal(contentEl.querySelector('.comment-highlight[data-comment-id="removed"]'), null, 'no held span painted over the shifted text');
 });
 
 test('a working comment whose offsets exceed the shrunken doc orphans, does not throw', () => {

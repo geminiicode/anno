@@ -124,24 +124,37 @@ function highlightRange(range, comment, pending = false, root = contentEl) {
   }
 }
 
+// unique occurrence only — a recurring prefix/suffix would anchor at the wrong match
+function uniqueIndex(text, s) {
+  if (!s) return -1;
+  const i = text.indexOf(s);
+  return i !== -1 && text.indexOf(s, i + 1) === -1 ? i : -1;
+}
+
 // Caret after the left context, else before the right — but only on a real context match; a blind
 // clamped offset would strand it somewhere unrelated. No match → null (orphan).
 function caretOffset(comment, root = contentEl) {
   const text = fullText(root);
-  // unique occurrence only — a recurring prefix/suffix would anchor the caret at the wrong match
-  const uniqueIndex = (s) => {
-    const i = text.indexOf(s);
-    return i !== -1 && text.indexOf(s, i + 1) === -1 ? i : -1;
-  };
   if (comment.prefix) {
-    const i = uniqueIndex(comment.prefix);
+    const i = uniqueIndex(text, comment.prefix);
     if (i !== -1) return i + comment.prefix.length;
   }
   if (comment.suffix) {
-    const i = uniqueIndex(comment.suffix);
+    const i = uniqueIndex(text, comment.suffix);
     if (i !== -1) return i;
   }
   return null;
+}
+
+// Held-highlight span: the region now between the comment's surviving prefix/suffix (what's being
+// rewritten). Null when a context is gone/ambiguous or the gap collapsed (quote removed).
+function contextBounds(comment, root = contentEl) {
+  const text = fullText(root);
+  const pi = uniqueIndex(text, comment.prefix);
+  const si = uniqueIndex(text, comment.suffix);
+  if (pi === -1 || si === -1) return null;
+  const start = pi + comment.prefix.length;
+  return si > start ? { start, end: si } : null;
 }
 
 function clearHighlights(root = contentEl) {
@@ -183,11 +196,12 @@ export function applyHighlights(root = contentEl) {
       continue;
     }
     const range = locateRange(comment, root);
-    // Claude rewrites the quoted text while addressing, so findAnchor misses and the highlight
-    // would vanish mid-run. Hold it at last-known offsets until the write re-anchors. Skip a
-    // collapsed span (start===end) — it paints nothing; let it fall through to the detached path.
-    if (!range && isWorking(comment) && comment.start < comment.end) {
-      const held = offsetsToRange(comment.start, comment.end, root);
+    // findAnchor missed mid-rewrite: hold the highlight, but bound it by surviving context, not
+    // stale offsets — tracks an in-place rewrite, collapses on removal (→ detached). Blind offsets
+    // would over-extend into text that shifted up and bleed onto the next line.
+    if (!range && isWorking(comment)) {
+      const bounds = contextBounds(comment, root);
+      const held = bounds && offsetsToRange(bounds.start, bounds.end, root);
       if (held) {
         anchors.set(comment.id, { detached: false });
         highlightRange(held, comment, false, root);

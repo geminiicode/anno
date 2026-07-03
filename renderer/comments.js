@@ -38,10 +38,10 @@ export function renderComments() {
     if (c.status === 'resolved') card.classList.add('resolved');
     card.dataset.commentId = c.id;
 
-    // detached = the quoted text is gone from the doc, so there's no live highlight. The card keeps
-    // its document-order slot (positioned at the gap) and flags the removal instead of silently
-    // pointing at nothing.
-    const detached = !!anchors.get(c.id)?.detached;
+    // detached = quote gone from the doc, no live highlight: the card holds its slot at the gap and
+    // flags the removal. Not while working — a mid-edit removal shouldn't flash it before the ✅.
+    const working = isWorking(c);
+    const detached = !!anchors.get(c.id)?.detached && !working;
     if (detached) card.classList.add('detached');
     const anchorTag = detached ? ' · ⚠︎ quote removed' : '';
     const repliesHtml = (c.replies || [])
@@ -63,7 +63,6 @@ export function renderComments() {
       })
       .join('');
 
-    const working = isWorking(c);
     if (working) card.classList.add('working');
     card.innerHTML = `
       ${reactionChip(c, working)}
