@@ -8,6 +8,10 @@ highlight + comment  ──▶  anno revises via your Claude Code  ──▶  ed
         └──────────────────────── you review ◀─────────────────────────┘
 ```
 
+<p align="center">
+  <img src="assets/demo.gif" alt="Highlighting text, leaving a comment, and anno revising the document live" width="820">
+</p>
+
 > **Note:** anno was developed entirely with AI ([Claude Code](https://claude.com/claude-code)) and has only been tested on macOS.
 
 ## Getting started
