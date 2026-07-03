@@ -9,16 +9,22 @@ export const state = {
   pendingRange: null
 };
 
-const listeners = new Set();
+// ordered by priority so the doc repaint (0) always runs before the sidebar (10) measures its
+// rects — the order is load-bearing and must not depend on module import timing (see doc.js)
+const listeners = [];
 
 // structural changes only — active-comment focus deliberately does NOT notify (see setActive)
-export function subscribe(fn) {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
+export function subscribe(fn, priority = 10) {
+  listeners.push({ fn, priority });
+  listeners.sort((a, b) => a.priority - b.priority);
+  return () => {
+    const i = listeners.findIndex((l) => l.fn === fn);
+    if (i !== -1) listeners.splice(i, 1);
+  };
 }
 
 export function render() {
-  for (const fn of listeners) fn();
+  for (const { fn } of listeners.slice()) fn();
 }
 
 // snapshot of our last write, to detect + skip the watcher echoing it back (flicker)
@@ -90,8 +96,8 @@ export async function addReply(id, reply) {
   if (!c) return;
   c.replies = c.replies || [];
   c.replies.push(reply);
-  // a human follow-up re-opens an addressed thread; resolved stays closed (replying there is just a note)
-  if (!reply.ai && c.status === 'addressed') c.status = 'open';
+  // a human follow-up re-opens an addressed OR errored thread; resolved stays closed (replying there is just a note)
+  if (!reply.ai && (c.status === 'addressed' || c.status === 'errored')) c.status = 'open';
   await commit();
 }
 
@@ -109,7 +115,7 @@ export function setPending(range) {
   state.pendingRange = range;
 }
 
-// set state but do NOT render: the caller paints the doc HTML first (applyHighlights needs the rendered text), then calls render()
+// these setters mutate state without rendering; the caller drives the repaint via render()
 
 export function loadDoc({ filePath, rawText, comments }) {
   state.filePath = filePath;

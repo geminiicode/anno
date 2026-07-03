@@ -46,5 +46,3 @@ later and stop.
 
 - The revision uses the user's own authenticated `claude` CLI, so no API keys
   are needed.
-- For a one-shot revision without the editor, run `anno address "$ARGUMENTS"`
-  instead.

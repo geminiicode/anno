@@ -24,11 +24,13 @@ const dom = new JSDOM(`<!DOCTYPE html><body>
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;
 globalThis.NodeFilter = dom.window.NodeFilter;
+globalThis.HTMLElement = dom.window.HTMLElement; // morphdom reads it as a global (real in Electron)
 globalThis.CSS = dom.window.CSS;
 globalThis.localStorage = dom.window.localStorage;
 globalThis.requestAnimationFrame = (cb) => cb();
 globalThis.marked = require('marked');
 globalThis.DOMPurify = require('dompurify')(dom.window);
+globalThis.morphdom = require('morphdom');
 globalThis.annoLib = require('../core/lib.js');
 
 // readFileHook (when set) gates readFile so a test can suspend it, switch tabs,
@@ -358,6 +360,29 @@ test('closing a folder-tab drops its slot with no per-file retention', async () 
   assert.equal(tabsStore.hasTab('/dir'), false);
   assert.equal(store.state.filePath, null);
   assert.ok(stopTabCalls.includes('/dir'), 'agent stopped on close');
+});
+
+test('a comments-only reload keeps untouched doc text nodes identical (live selection survives)', async () => {
+  // The bug: a comment's sidecar update rebuilt contentEl and corrupted a live selection. With morph,
+  // an unchanged paragraph keeps its exact text node — the identity a native Range relies on.
+  files.set('/s.md', '# T\n\nFirst paragraph stays put.\n\nSecond has the comment target.\n');
+  sidecars.set('/s.md', []);
+  await doc.openFile('/s.md');
+
+  const p1 = [...contentEl.querySelectorAll('p')].find((p) => p.textContent.startsWith('First'));
+  const node1 = p1.firstChild; // the text node a user would be mid-selecting
+  assert.equal(node1.nodeType, 3);
+
+  const full = contentEl.textContent;
+  const q = 'comment target';
+  const start = full.indexOf(q);
+  sidecars.set('/s.md', [{ id: 'c1', quote: q, start, end: start + q.length, status: 'open', replies: [] }]);
+  await doc.onExternalChange({ kind: 'comments', mdPath: '/s.md', root: '/s.md' });
+
+  assert.ok(contentEl.querySelector('.comment-highlight[data-comment-id="c1"]'), 'comment highlight applied');
+  assert.ok(node1.isConnected, 'untouched paragraph text node survives the reload');
+  assert.equal(p1.firstChild, node1, 'morph reused the text node, did not replace it');
+  assert.equal(node1.nodeValue, 'First paragraph stays put.');
 });
 
 test('absorbed verdict closes the file-tabs and opens the folder-tab', async () => {

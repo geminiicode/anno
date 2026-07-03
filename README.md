@@ -22,8 +22,6 @@ Requires Node 18+ and an authenticated [Claude Code](https://code.claude.com/doc
 
 ```bash
 anno review <file.md|folder>   # open the editor AND auto-address comments (full loop)
-anno address <file.md>         # one-shot: revise the doc to address open comments
-anno watch <file.md|folder>    # auto-address watcher only (daemon, no editor)
 anno list <file.md>            # show comments and their statuses
 ```
 
@@ -37,7 +35,12 @@ anno list <file.md>            # show comments and their statuses
 
 ## Security note
 
-`anno` runs Claude with edit access to the document's directory (`--permission-mode acceptEdits`), and the document and comments are part of the prompt — so **reviewing a file effectively grants its author edit access to that directory**. Claude is limited to `Read,Edit` (not `Write`), so it can't create new files. Only run the loop on files you trust.
+`anno` runs Claude with `--permission-mode acceptEdits` and the document and comments are part of the prompt, so **reviewing a file effectively grants its author the ability to run Claude as you.** Two things to be clear about:
+
+- **Edit is not directory-sandboxed.** Claude is limited to `Read,Edit` (not `Write`, so it can't create new files), but Edit can modify **any existing file your user account can write** — not just files in the document's folder. A malicious comment could target `~/.zshrc`, a config file, or source in a parent repo.
+- **A folder tab shares one Claude session across all its documents.** Context carries between files (that's the point), which means a prompt-injecting comment in one document can influence Claude's revisions of the *other* documents in that folder for as long as the tab is open. Closing the tab is what ends the shared session.
+
+Only run the loop on files and folders you trust.
 
 ## License
 

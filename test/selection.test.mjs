@@ -30,8 +30,8 @@ window.getSelection = () => {
   return sel;
 };
 
-await import('../renderer/selection.js'); // registers the selectionchange handler
-const { contentEl, addCommentBtn } = await import('../renderer/dom.js');
+await import('../renderer/selection.js'); // registers the selection handlers (mouseup/keyup/selectionchange)
+const { contentEl, addCommentBtn, docPaneEl } = await import('../renderer/dom.js');
 const store = await import('../renderer/store.js');
 
 function selectThroughLastWord(endNode) {
@@ -62,8 +62,8 @@ test('button shows when the selection ends past the last block (the regression)'
   document.body.appendChild(sentinel);
   addCommentBtn.hidden = true;
   selectThroughLastWord(sentinel);
-  document.dispatchEvent(new window.Event('selectionchange'));
-  assert.equal(addCommentBtn.hidden, false, 'a selection anchored in content must keep the button visible even when it overshoots the last block');
+  document.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true }));
+  assert.equal(addCommentBtn.hidden, false, 'a selection anchored in content must offer the button even when it overshoots the last block');
   sentinel.remove();
 });
 
@@ -71,8 +71,47 @@ test('normal in-content selection still shows the button (no regression)', () =>
   contentEl.innerHTML = '<p>Paragraph 6: some mid-document text.</p>';
   addCommentBtn.hidden = true;
   selectThroughLastWord(null); // both endpoints inside content
-  document.dispatchEvent(new window.Event('selectionchange'));
+  document.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true }));
   assert.equal(addCommentBtn.hidden, false);
+});
+
+test('the button stays hidden mid-drag (selectionchange), only appears on release (mouseup)', () => {
+  contentEl.innerHTML = '<p>Paragraph 6: some mid-document text.</p>';
+  addCommentBtn.hidden = true;
+  selectThroughLastWord(null);
+  // selectionchange fires continuously while dragging — it must NOT pop the button in
+  document.dispatchEvent(new window.Event('selectionchange'));
+  assert.equal(addCommentBtn.hidden, true, 'no button while the selection is still being dragged');
+  document.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true }));
+  assert.equal(addCommentBtn.hidden, false, 'button appears once the drag is released');
+});
+
+test('shift-keyup surfaces the button after a keyboard selection', () => {
+  contentEl.innerHTML = '<p>Paragraph for keyboard selection.</p>';
+  addCommentBtn.hidden = true;
+  selectThroughLastWord(null);
+  document.dispatchEvent(new window.KeyboardEvent('keyup', { key: 'Shift', shiftKey: true, bubbles: true }));
+  assert.equal(addCommentBtn.hidden, false, 'shift-keyup on a settled selection offers the button');
+});
+
+test('scroll mid-drag does not pop the button in (dragging suppression)', () => {
+  contentEl.innerHTML = '<p>Paragraph for the scroll test.</p>';
+  selectThroughLastWord(null);
+  addCommentBtn.hidden = true;
+  document.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }));
+  docPaneEl.dispatchEvent(new window.Event('scroll'));
+  // without the `if (dragging) return` guard the scroll handler would re-pin and reveal the button here
+  assert.equal(addCommentBtn.hidden, true, 'an auto-scrolling drag-select must not reveal the button');
+  document.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true }));
+});
+
+test('scroll with no active anchor hides a stranded button', () => {
+  contentEl.innerHTML = '<p>doc text</p>';
+  window.getSelection().removeAllRanges();
+  document.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true }));
+  addCommentBtn.hidden = false; // pretend it was left visible from an earlier selection
+  docPaneEl.dispatchEvent(new window.Event('scroll'));
+  assert.equal(addCommentBtn.hidden, true, 'no selection/image anchor → scroll hides the button');
 });
 
 test('selection entirely outside content leaves the button hidden', () => {
@@ -84,7 +123,7 @@ test('selection entirely outside content leaves the button hidden', () => {
   sel.removeAllRanges();
   sel.addRange(range);
   addCommentBtn.hidden = true;
-  document.dispatchEvent(new window.Event('selectionchange'));
+  document.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true }));
   assert.equal(addCommentBtn.hidden, true, 'a selection with no endpoint in content must not offer a comment');
 });
 
@@ -93,8 +132,8 @@ function fireAddComment() {
   addCommentBtn.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, cancelable: true }));
 }
 
-test('overshoot anchors to the selected instance, not the first duplicate', () => {
-  // select the 2nd "gamma" + trailing space so the trimmed quote disagrees with raw offsets, forcing the indexOf relocation
+test('anchors to the selected instance, not the first duplicate, trimming trailing space', () => {
+  // select the 2nd "gamma" + a trailing space → tightened off both quote and offsets
   contentEl.innerHTML = '<p>gamma alpha</p><p>beta gamma end</p>';
   const text = contentEl.textContent;
   const second = text.indexOf('gamma', text.indexOf('gamma') + 1);
@@ -102,7 +141,7 @@ test('overshoot anchors to the selected instance, not the first duplicate', () =
   const g = node.textContent.indexOf('gamma');
   const range = document.createRange();
   range.setStart(node, g);
-  range.setEnd(node, g + 'gamma '.length); // include trailing space → trimmed off the quote
+  range.setEnd(node, g + 'gamma '.length); // include trailing space → tightened off the quote
   const sel = window.getSelection();
   sel.removeAllRanges(); sel.addRange(range);
   store.setPending(null);
@@ -110,5 +149,30 @@ test('overshoot anchors to the selected instance, not the first duplicate', () =
   const p = store.state.pendingRange;
   assert.ok(p, 'a valid in-content selection must produce a pending comment');
   assert.equal(p.quote, 'gamma');
-  assert.equal(p.start, second, 'seeded indexOf must anchor the selected gamma, not the first');
+  assert.equal(p.start, second, 'anchored to the selected gamma, not the first');
+});
+
+test('a selection spanning a hard-wrapped line still anchors (quote from slice, not toString)', () => {
+  // The bug: Selection.toString() collapses a line-wrap newline to a space → old check failed →
+  // {0,0}. Anchoring must use the textContent slice so start/end/quote stay self-consistent.
+  contentEl.innerHTML = '<p>alpha beta\ngamma delta epsilon</p>';
+  const node = contentEl.querySelector('p').firstChild;
+  const text = contentEl.textContent; // "alpha beta\ngamma delta epsilon"
+  const start = text.indexOf('beta');
+  const end = text.indexOf('delta') + 'delta'.length;
+  const range = document.createRange();
+  range.setStart(node, start);
+  range.setEnd(node, end);
+  const sel = window.getSelection();
+  sel.removeAllRanges(); sel.addRange(range);
+  // the harness stub hides the bug: override toString to collapse the wrap newline like a real
+  // Selection (Range.toString keeps it). Without this the test would pass on the buggy code too.
+  sel.toString = () => text.slice(start, end).replace(/\n/g, ' ');
+  store.setPending(null);
+  fireAddComment();
+  const p = store.state.pendingRange;
+  assert.ok(p && p.start < p.end, 'a wrapped-line selection must anchor (not collapse to {0,0})');
+  assert.equal(text.slice(p.start, p.end), p.quote, 'quote is the exact anchored slice');
+  assert.ok(p.quote.includes('\n'), 'the anchored quote keeps the internal wrap newline');
+  assert.equal(p.start, start, 'anchored at the selection start');
 });

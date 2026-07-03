@@ -310,8 +310,8 @@ function watchTree(wc, root) {
 function spawnTab(wc, root, isDir) {
   if (openTabs.has(root)) return;
   const close = isDir ? watchTree(wc, root) : watchFile(wc, root);
-  // ELECTRON_RUN_AS_NODE runs our own binary as plain node so it can exec anno.js.
-  const daemon = spawn(process.execPath, [path.join(__dirname, 'anno.js'), 'watch', root], {
+  // ELECTRON_RUN_AS_NODE runs our own binary as plain node so it can exec the daemon.
+  const daemon = spawn(process.execPath, [path.join(__dirname, 'cli', 'watch-daemon.js'), root], {
     stdio: 'inherit',
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
   });

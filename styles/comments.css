@@ -1,5 +1,7 @@
 #addCommentBtn {
-  position: absolute;
+  /* fixed, not absolute: getClientRects is viewport-relative and #docPane (not the window) is
+     the scroller, so viewport coords place it correctly with no scroll math */
+  position: fixed;
   z-index: 50;
   font-size: 13px;
   padding: 6px 12px;
@@ -112,6 +114,7 @@
   user-select: none;
 }
 .comment-card .quote { padding-right: 22px; }
+.reaction.errored { cursor: help; }
 .reaction.working { animation: reaction-pulse 1.6s ease-in-out infinite; }
 @keyframes reaction-pulse {
   0%, 100% { opacity: 0.45; }

@@ -1,4 +1,4 @@
-import { addCommentBtn, contentEl, state } from './dom.js';
+import { addCommentBtn, contentEl, docPaneEl, state } from './dom.js';
 import { rangeToOffsets, fullText } from './anchoring.js';
 import { openComposer } from './comments.js';
 import { setPending } from './store.js';
@@ -7,15 +7,29 @@ import { basename, formatShortcut } from './helpers.js';
 
 // images carry no text selection, so getSelection() can't represent a clicked one — track the pick out of band
 let pendingImage = null;
+// a mouse button is held (a potential drag) — suppresses the scroll-follow so an auto-scrolling
+// drag-select doesn't pop the button in before the user has released
+let dragging = false;
 
 const SHORTCUT_LABEL = formatShortcut('Enter');
 addCommentBtn.title = `Add a comment (${SHORTCUT_LABEL})`;
 addCommentBtn.innerHTML = `💬 Comment <span class="kbd">${SHORTCUT_LABEL}</span>`;
 
+// viewport coords (the button is position:fixed); clamp both edges so it never rides off-screen.
+// unhide before measuring — a hidden element reports offsetWidth 0, so the right-edge clamp would miss.
 function showButtonAt(rect) {
-  addCommentBtn.style.top = window.scrollY + rect.top - 38 + 'px';
-  addCommentBtn.style.left = window.scrollX + rect.left + 'px';
   addCommentBtn.hidden = false;
+  const left = Math.min(rect.left, window.innerWidth - addCommentBtn.offsetWidth - 6);
+  addCommentBtn.style.top = Math.max(6, rect.top - 38) + 'px';
+  addCommentBtn.style.left = Math.max(6, left) + 'px';
+}
+
+// first line's top-left, so the button sits at a stable spot regardless of drag direction
+function selectionStartRect(sel) {
+  const range = sel.getRangeAt(0);
+  const rects = range.getClientRects?.();
+  if (rects && rects.length) return rects[0];
+  return range.getBoundingClientRect();
 }
 
 function activeTextSelection() {
@@ -28,15 +42,42 @@ function activeTextSelection() {
   return sel;
 }
 
+// selectionchange only HIDES (a button jittering under the cursor mid-drag is distracting);
+// mouseup — and shift-keyup for keyboard selection — is what shows it once the selection settles.
 document.addEventListener('selectionchange', () => {
-  const sel = activeTextSelection();
-  if (sel) {
-    pendingImage = null; // a text selection supersedes an image pick
-    showButtonAt(sel.getRangeAt(0).getBoundingClientRect());
-    return;
-  }
-  if (!pendingImage) addCommentBtn.hidden = true;
+  if (!activeTextSelection() && !pendingImage) addCommentBtn.hidden = true;
 });
+
+function offerCommentButton() {
+  const sel = activeTextSelection();
+  if (!sel) return;
+  pendingImage = null; // a text selection supersedes an image pick
+  showButtonAt(selectionStartRect(sel));
+}
+
+document.addEventListener('mouseup', () => { dragging = false; offerCommentButton(); });
+document.addEventListener('keyup', (e) => { if (e.shiftKey || e.key === 'Shift') offerCommentButton(); });
+// a release off-window or a native drag gesture won't fire our document mouseup — clear the latch on
+// those too, else the scroll-follow stays disabled until the next full mousedown→mouseup
+window.addEventListener('blur', () => { dragging = false; });
+document.addEventListener('dragend', () => { dragging = false; });
+
+function currentAnchorRect() {
+  if (pendingImage) return contentEl.contains(pendingImage) ? pendingImage.getBoundingClientRect() : null;
+  const sel = activeTextSelection();
+  return sel ? selectionStartRect(sel) : null;
+}
+
+// position:fixed, so #docPane scrolling out from under it would strand the button — re-pin to the
+// anchor on scroll, and hide it once the anchor leaves the pane. Skipped mid-drag (see dragging).
+docPaneEl?.addEventListener('scroll', () => {
+  if (dragging) return;
+  const rect = currentAnchorRect();
+  if (!rect) { addCommentBtn.hidden = true; return; }
+  const pane = docPaneEl.getBoundingClientRect();
+  if (rect.bottom < pane.top || rect.top > pane.bottom) { addCommentBtn.hidden = true; return; }
+  showButtonAt(rect);
+}, { passive: true });
 
 // fall back to matching the markdown-source src in case highlightImage's data-commentId stamp isn't applied yet
 function commentIdForImage(img) {
@@ -78,20 +119,25 @@ function startComment() {
 
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0) return;
-  // trailing newlines from an over-the-end range break the offset match below; trim first
-  const quote = sel.toString().trim();
-  if (!quote) return;
+  const selText = sel.toString().trim();
+  if (!selText) return;
 
   const text = fullText();
   const range = sel.getRangeAt(0);
-  // quote is authoritative, offsets best-effort: if they disagree (e.g. range starts on a block-boundary newline node), relocate by text
+  // Trust rangeToOffsets when it resolves, and take the quote from the textContent slice, NOT
+  // Selection.toString() — toString() collapses hard-wrap newlines to spaces, so a wrapped-line
+  // quote wouldn't match textContent and the comment would anchor at {0,0}.
   let offsets = rangeToOffsets(range);
-  if (!offsets || text.slice(offsets.start, offsets.end) !== quote) {
-    // seed indexOf from the range's offset so a repeated phrase anchors to the selected instance, not the first
-    let idx = text.indexOf(quote, offsets ? offsets.start : 0);
-    if (idx === -1) idx = text.indexOf(quote);
-    offsets = idx === -1 ? { start: 0, end: 0 } : { start: idx, end: idx + quote.length };
+  if (offsets && offsets.start < offsets.end) {
+    // tighten past leading/trailing whitespace so quote and offsets stay in lockstep, no stray edges
+    while (offsets.start < offsets.end && /\s/.test(text[offsets.start])) offsets.start += 1;
+    while (offsets.end > offsets.start && /\s/.test(text[offsets.end - 1])) offsets.end -= 1;
+  } else {
+    // range unusable (e.g. a boundary on a non-text node) — best-effort locate by the selection text
+    const idx = text.indexOf(selText);
+    offsets = idx === -1 ? { start: 0, end: 0 } : { start: idx, end: idx + selText.length };
   }
+  const quote = offsets.start < offsets.end ? text.slice(offsets.start, offsets.end) : selText;
 
   setPending({
     start: offsets.start,
@@ -122,6 +168,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('mousedown', (e) => {
+  dragging = true;
   if (e.target !== addCommentBtn && !addCommentBtn.contains(e.target)) {
     pendingImage = null;
     addCommentBtn.hidden = true;

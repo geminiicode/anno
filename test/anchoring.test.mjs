@@ -70,6 +70,15 @@ test('offsetsToRange returns null when offsets run past the rendered text', () =
   assert.equal(offsetsToRange(2, 999), null);
 });
 
+test('rangeToOffsets handles element-node boundaries (triple-click selects a whole block)', () => {
+  // triple-click gives ELEMENT-node boundaries (the <p>), not text nodes — the old scan returned null
+  setContent('<p>alpha</p><p>bravo charlie</p>');
+  const p2 = contentEl.querySelectorAll('p')[1];
+  const range = document.createRange();
+  range.selectNodeContents(p2); // boundaries are (p2, 0) and (p2, 1) — element containers
+  assert.deepEqual(rangeToOffsets(range), { start: 5, end: 5 + 'bravo charlie'.length });
+});
+
 test('applyHighlights wraps an anchored quote and flags an orphan', () => {
   setContent('<p>The quick brown fox</p>');
   store.loadDoc({
@@ -163,6 +172,44 @@ test('a stale working flag does not resurrect a highlight for a gone quote', () 
   assert.equal(contentEl.querySelector('.comment-highlight[data-comment-id="stale"]'), null);
 });
 
+test('a comment whose quote was removed anchors a caret at its last-known spot, kept in text order', () => {
+  // quote removed entirely (neither quote nor held offsets resolve) but context present → anchor a
+  // zero-width caret and refresh start to it, so the card keeps doc-order instead of sinking.
+  setContent('<p>Before the gap after</p>');
+  store.loadDoc({
+    filePath: '/x/doc.md',
+    rawText: '# d',
+    comments: [
+      { id: 'gone', quote: 'REMOVED PHRASE', prefix: 'Before ', suffix: ' after', start: 7, end: 21, status: 'open', replies: [] },
+    ],
+  });
+
+  applyHighlights();
+
+  const caret = contentEl.querySelector('.comment-highlight.caret[data-comment-id="gone"]');
+  assert.ok(caret, 'a caret marker is painted where the removed quote used to be');
+  assert.equal(anchors.get('gone').orphaned, false, 'a caret-anchored comment is not orphaned');
+  const c = store.state.comments.find((x) => x.id === 'gone');
+  assert.equal(c.start, 'Before '.length, 'start refreshed to the caret offset (just after the prefix)');
+  assert.equal(c.end, c.start, 'the caret is zero-width');
+});
+
+test('a removed-quote comment with no matching context still orphans (no caret)', () => {
+  setContent('<p>totally different text</p>');
+  store.loadDoc({
+    filePath: '/x/doc.md',
+    rawText: '# d',
+    comments: [
+      { id: 'nocontext', quote: 'gone', prefix: 'ZZZ ', suffix: ' YYY', start: 4, end: 8, status: 'open', replies: [] },
+    ],
+  });
+
+  applyHighlights();
+
+  assert.equal(anchors.get('nocontext').orphaned, true, 'no context match → orphaned');
+  assert.equal(contentEl.querySelector('.comment-highlight[data-comment-id="nocontext"]'), null, 'no caret without a context match');
+});
+
 test('the pending selection is highlighted while composing, and cleared when discarded', () => {
   // startComment clears the native selection and the comment isn't in state.comments yet,
   // so applyHighlights must paint pendingRange itself or the quote goes dark mid-compose.
@@ -178,6 +225,22 @@ test('the pending selection is highlighted while composing, and cleared when dis
   store.setPending(null);
   applyHighlights();
   assert.equal(contentEl.querySelector('.comment-highlight.pending'), null, 'discarding clears the pending highlight');
+});
+
+test('the pending highlight re-anchors by quote when a mid-compose reload shifts the text', () => {
+  // a mid-compose reload can move the text — fixed offsets would strand it; must relocate by quote
+  setContent('<p>The quick brown fox</p>');
+  store.loadDoc({ filePath: '/x/doc.md', rawText: '# d', comments: [] });
+  store.setPending({ start: 4, end: 9, quote: 'quick', prefix: 'The ', suffix: ' brown' });
+  applyHighlights();
+  assert.equal(contentEl.querySelector('.comment-highlight.pending').textContent, 'quick');
+
+  setContent('<p>Yesterday, the quick brown fox jumped</p>');
+  applyHighlights();
+  const span = contentEl.querySelector('.comment-highlight.pending');
+  assert.ok(span, 'pending highlight survives the reload');
+  assert.equal(span.textContent, 'quick', 're-anchored by quote, not left at the stale offsets');
+  store.setPending(null);
 });
 
 test('a collapsed / orphaned pending range draws no highlight, does not throw', () => {

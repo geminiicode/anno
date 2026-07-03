@@ -1,7 +1,7 @@
 import { commentListEl, commentPaneEl, state } from './dom.js';
 import { escapeHtml, truncate, formatDate, newId, isWorking } from './helpers.js';
 import { getLayout, ensureCommentsVisible } from './layout.js';
-import { anchors, applyHighlights } from './anchoring.js';
+import { anchors } from './anchoring.js';
 import { layoutComments, focusComment } from './comment-layout.js';
 import { hasRenderableDiff, renderHunksHtml } from './diff.js';
 import * as store from './store.js';
@@ -114,16 +114,14 @@ export function renderComments() {
 
 export function openComposer() {
   ensureCommentsVisible();
-  applyHighlights(); // paint the pending selection in the doc (native selection was cleared)
-  renderComments();
+  store.render(); // paint the pending selection in the doc (native selection was cleared) + sidebar
   injectNewComposer();
 }
 
 // setPending(null) + repaint: drop the pending doc highlight and the composer card together
 function discardPending() {
   store.setPending(null);
-  applyHighlights();
-  renderComments();
+  store.render();
 }
 
 // drops any existing composer first so openComposer (render-then-inject) can't stack two
@@ -250,12 +248,19 @@ async function addComment(body) {
 function reactionChip(c, working) {
   if (working) return '<span class="reaction working" title="Claude is addressing this…">👀</span>';
   if (c.status === 'addressed') return '<span class="reaction done" title="Addressed by Claude">✅</span>';
+  if (c.status === 'errored') {
+    // errorDetail can be up to scrubDetail's 2000-char cap; a native tooltip that long
+    // is unreadable, so show a lead fragment (full detail lives in the sidecar).
+    const detail = c.errorDetail ? c.errorDetail.slice(0, 200) : '';
+    const why = detail ? `: ${detail}${c.errorDetail.length > 200 ? '…' : ''}` : '';
+    return `<span class="reaction errored" title="${escapeHtml('Claude could not address this — reply to retry' + why)}">⚠️</span>`;
+  }
   return '';
 }
 
 function statusBadge(c, working) {
   if (c.status === 'resolved') return '<span class="badge resolved">Resolved</span>';
-  if (working || c.status === 'addressed') return ''; // shown by the reaction chip
+  if (working || c.status === 'addressed' || c.status === 'errored') return ''; // shown by the reaction chip
   return '<span class="badge open">Open</span>';
 }
 

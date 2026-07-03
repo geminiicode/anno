@@ -127,6 +127,16 @@
 /* provisional: the comment isn't saved yet */
 .comment-highlight.pending { outline: 1px dashed var(--accent); outline-offset: 1px; }
 .comment-highlight.resolved { background: var(--highlight-resolved); }
+/* removed-text comment: the quote is gone, so we anchor an empty span as a caret where it sat */
+.comment-highlight.caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  vertical-align: text-bottom;
+  background: var(--accent);
+  border-radius: 1px;
+}
+.comment-highlight.caret.active { background: var(--accent); }
 /* Images can't be background-tinted (the bitmap covers it) — ring them instead. */
 img.comment-highlight { background: none; outline: 3px solid var(--highlight-active); outline-offset: 2px; }
 img.comment-highlight.active { outline-color: var(--accent); }

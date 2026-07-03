@@ -49,11 +49,16 @@ export function layoutComments(animate = true) {
   }
   if (!animate) commentListEl.classList.add('no-anim');
 
-  const items = cards.map((el) => {
-    let target = cardTarget(el);
-    if (target === null) target = Number.POSITIVE_INFINITY;
-    return { el, target, height: el.offsetHeight };
-  });
+  const items = cards.map((el) => ({ el, target: cardTarget(el), height: el.offsetHeight }));
+
+  // Cards arrive start-sorted; a card whose anchor has no live rect (mid-rewrite highlight, or an
+  // un-resolvable caret) inherits the preceding card's position instead of sinking to the bottom
+  // via Infinity — the out-of-order bug.
+  let filled = 0;
+  for (const it of items) {
+    if (it.target == null) it.target = filled;
+    else filled = it.target;
+  }
 
   const activeIdx = items.findIndex(
     (it) => it.el.classList.contains('active') && isFinite(it.target)

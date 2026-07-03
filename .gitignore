@@ -13,6 +13,5 @@ out/
 *.log
 .DS_Store
 
-# Local Claude Code settings + transient worktrees
-.claude/settings.local.json
-.claude/worktrees/
+# Local Claude Code state (settings, plans, worktrees) — nothing here is shipped
+.claude/

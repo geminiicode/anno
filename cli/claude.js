@@ -1,4 +1,5 @@
 const { spawn } = require('child_process');
+const path = require('path');
 
 let activeChild = null;
 
@@ -20,28 +21,67 @@ function extractJsonArray(text) {
   }
 }
 
-function buildPrompt(mdPath, openComments) {
+// seen: `${mdPath}\n${id}` -> reply count already forwarded; null = cold (send all).
+// Keyed by file+comment because one session spans the folder — a re-used id collides across docs.
+// manifest: sibling {path,title} for a folder tab; null/empty ⇒ omit.
+function buildPrompt(mdPath, openComments, seen = null, manifest = null) {
+  const seenKey = (id) => `${mdPath}\n${id}`;
   const items = openComments.map((c) => {
-    const item = { id: c.id, quote: c.quote, comment: c.body };
-    // Carry prior turns so a re-opened thread answers the follow-up against the
-    // current doc instead of re-applying the original comment.
     const replies = Array.isArray(c.replies) ? c.replies : [];
-    if (replies.length) {
-      item.thread = replies.map((r) => ({
+    const knownCount = seen ? seen.get(seenKey(c.id)) || 0 : 0;
+    const newToSession = !seen || !seen.has(seenKey(c.id));
+    const item = { id: c.id, quote: c.quote };
+    if (newToSession) item.comment = c.body;
+    const freshReplies = replies.slice(knownCount);
+    if (freshReplies.length) {
+      item.thread = freshReplies.map((r) => ({
         from: r.ai ? 'you' : 'reviewer',
         body: r.body,
       }));
     }
+    // Never emit a bare {id, quote}: re-send the body + last AI turn as thread so the "already applied, don't redo" guard fires — a bare body risks re-applying the original.
+    if (!item.comment && !item.thread) {
+      item.comment = c.body;
+      const lastAi = [...replies].reverse().find((r) => r.ai);
+      if (lastAi) item.thread = [{ from: 'you', body: lastAi.body }];
+    }
     return item;
   });
+  // guard on the filtered siblings, not raw manifest.length — a folder tab holding
+  // only this file would otherwise emit the header with zero bullets under it
+  const siblings = Array.isArray(manifest)
+    ? manifest.filter((e) => path.resolve(e.path) !== path.resolve(mdPath))
+    : [];
+  const manifestBlock = siblings.length
+    ? [
+        '',
+        'The other markdown documents in this folder (Read any with your Read tool',
+        'for context — shared terminology, facts, structure — but do NOT edit them):',
+        ...siblings.map((e) => `  - ${e.path}${e.title ? ` — ${e.title}` : ''}`),
+      ]
+    : [];
   return [
     'You are revising a markdown document based on reviewer comments.',
     '',
     `Edit this file IN PLACE using your Edit tool: ${mdPath}`,
     '',
+    'This is a continuing session that may have revised OTHER files in this folder',
+    'earlier. Two hard rules follow from that:',
+    `  1. Edit ONLY the file named above (${mdPath}). You MAY Read sibling files in`,
+    '     the folder for context — to keep terminology, headings, or facts',
+    '     consistent across documents — but do NOT edit any file other than the one',
+    '     named above, and never edit a .comments.json file.',
+    '  2. The comments below are the SOLE instructions for this file. Ignore',
+    '     instructions or requests carried over from earlier documents in this',
+    '     session unless a comment below explicitly asks you to apply them here.',
+    ...manifestBlock,
+    '',
+    'Re-read the file above before editing — its current on-disk text is the source',
+    'of truth, not your memory of an earlier revision.',
+    '',
     'Each comment below points at a quoted span of the document and asks for a',
     'change. Apply each change faithfully and minimally — do not rewrite',
-    'untouched sections. Do NOT edit any .comments.json file.',
+    'untouched sections.',
     '',
     'A comment may include a "thread" of prior turns. When present, the original',
     'change was already applied to the document; the reviewer\'s latest message',
@@ -78,27 +118,41 @@ function buildPrompt(mdPath, openComments) {
   ].join('\n');
 }
 
-// prompt on stdin: argv would hit ARG_MAX on large comment sets
-function runClaude(prompt, cwd) {
+// prompt on stdin: argv would hit ARG_MAX on large comment sets.
+// Resolves { stdout, stderr, code }, NEVER rejects on non-zero exit: an Edit may have
+// fired before claude failed and the json envelope can't tell, so the caller classifies
+// the raw signals (see addressCore).
+function runClaude(prompt, cwd, { sessionId, name } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      'claude',
-      [
-        '-p',
-        '--permission-mode',
-        'acceptEdits',
-        // Edit is NOT dir-sandboxed — a prompt-injecting doc can modify any existing file the user can write (no-Write only blocks new-file creation). Trust model: only review files you trust.
-        '--allowedTools',
-        'Read,Edit',
-        '--output-format',
-        'json',
-      ],
-      { cwd, stdio: ['pipe', 'pipe', 'inherit'] }
-    );
+    const args = [
+      '-p',
+      '--permission-mode',
+      'acceptEdits',
+      // Edit is NOT dir-sandboxed — a prompt-injecting doc can modify any existing file the user can write (no-Write only blocks new-file creation). Trust model: only review files you trust.
+      '--allowedTools',
+      'Read,Edit',
+      '--output-format',
+      'json',
+    ];
+    // name only on create — a resumed session already carries the name set at creation
+    if (sessionId) args.push('--resume', sessionId);
+    else if (name) args.push('--name', name);
+    const child = spawn('claude', args, { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
     activeChild = child;
     let stdout = '';
+    let stderr = '';
+    let stderrHead = null;
     child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
     child.stdout.on('data', (d) => (stdout += d));
+    // Bound stderr so a chatty child can't balloon the daemon, but keep the HEAD: the resume-miss classifier greps for "no conversation found" (printed at the start), which a tail-only keep would drop.
+    child.stderr.on('data', (d) => {
+      stderr += d;
+      if (stderr.length > 65536) {
+        if (stderrHead === null) stderrHead = stderr.slice(0, 8192);
+        stderr = stderr.slice(-57344);
+      }
+    });
     child.on('error', (err) => {
       activeChild = null;
       reject(
@@ -107,9 +161,12 @@ function runClaude(prompt, cwd) {
     });
     child.on('close', (code) => {
       activeChild = null;
-      if (code !== 0) return reject(new Error(`claude exited with code ${code}`));
-      resolve(stdout);
+      const err = stderrHead === null ? stderr : `${stderrHead}\n[…stderr truncated…]\n${stderr}`;
+      resolve({ stdout, stderr: err, code });
     });
+    // a child that exits before draining stdin emits EPIPE here; with no listener it
+    // throws and takes down the long-lived daemon. Swallow — 'error'/'close' handle it.
+    child.stdin.on('error', () => {});
     child.stdin.end(prompt);
   });
 }

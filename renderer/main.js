@@ -8,8 +8,7 @@ import {
 } from './dom.js';
 import { getLayout, setLayout, applyLayout } from './layout.js';
 import { renderComments } from './comments.js';
-import { applyHighlights } from './anchoring.js';
-import { subscribe } from './store.js';
+import { subscribe, render } from './store.js';
 import { scheduleLayout } from './comment-layout.js';
 import { openFile, openFolderTab, onExternalChange, showHome } from './doc.js';
 import * as host from './host.js';
@@ -17,10 +16,8 @@ import './selection.js';
 import './diff.js';
 import './help.js';
 
-subscribe(() => {
-  applyHighlights();
-  renderComments();
-});
+// priority 10 → runs after renderDoc (priority 0), so the sidebar measures freshly-morphed rects
+subscribe(renderComments, 10);
 
 if ((globalThis.navigator?.userAgent || '').includes('Mac OS X')) document.body.classList.add('mac');
 
@@ -37,8 +34,7 @@ function toggleRightSidebar() {
 function toggleResolved() {
   setLayout({ hideResolved: !getLayout().hideResolved });
   applyLayout();
-  applyHighlights();
-  renderComments();
+  render();
 }
 
 // Cmd/Ctrl+T shows the home screen (deactivates the active doc); +L toggles the left

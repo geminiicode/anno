@@ -5,18 +5,39 @@ import { focusComment } from './comment-layout.js';
 import { renderTabs } from './tabs.js';
 import { paintActiveTree } from './filetree.js';
 import { resolveImageSrcs } from './images.js';
+import { applyHighlights } from './anchoring.js';
 import * as store from './store.js';
 import * as tabsStore from './tabs-store.js';
 import * as host from './host.js';
 
-function paintDoc(raw) {
-  contentEl.innerHTML = DOMPurify.sanitize(marked.parse(raw));
-  resolveImageSrcs(contentEl, state.filePath);
+// Build the next tree off-screen (markdown + images + highlights) and morph the live DOM toward
+// it — byte-identical regions keep node identity, so a native selection survives a reload that
+// doesn't touch the selected text (the reason this exists).
+// parse+sanitize depend only on filePath/rawText but renderDoc runs on every render (incl. comment
+// ops), so cache the parsed baseline and clone per render — applyHighlights mutates the clone.
+let baseCache = { file: null, raw: null, tree: null };
+export function renderDoc() {
+  if (state.rawText == null) return; // home screen / unselected folder tab own contentEl directly
+  if (baseCache.raw !== state.rawText || baseCache.file !== state.filePath) {
+    const base = document.createElement('div');
+    base.innerHTML = DOMPurify.sanitize(marked.parse(state.rawText));
+    resolveImageSrcs(base, state.filePath); // src rewrite is filePath/rawText-stable too
+    baseCache = { file: state.filePath, raw: state.rawText, tree: base };
+  }
+  const fresh = baseCache.tree.cloneNode(true);
+  applyHighlights(fresh);
+  morphdom(contentEl, fresh, { childrenOnly: true });
 }
+
+// priority 0 so the doc morphs in before comments.js's sidebar subscriber (priority 10) measures
+// its highlight rects — the ordering is explicit here, not a side effect of import order.
+store.subscribe(renderDoc, 0);
 
 function showActive(scrollTop) {
   currentFileEl.textContent = prettyPath(state.filePath);
-  paintDoc(state.rawText);
+  // file switch: clear first so the morph doesn't diff against (or reuse nodes from) the
+  // outgoing doc — there's no selection to preserve across a switch, and cross-doc reuse is waste
+  contentEl.replaceChildren();
   store.render();
   docPaneEl.scrollTop = scrollTop || 0;
   restoreFocus();
@@ -188,8 +209,7 @@ async function reloadDoc(newRaw) {
   store.setRawText(newRaw);
   store.setComments(comments);
   store.setActiveIfPresent(keepActive);
-  paintDoc(newRaw);
-  store.render();
+  store.render(); // same-file morph: preserves the live selection on untouched regions
   docPaneEl.scrollTop = scrollTop;
   restoreFocus();
 }

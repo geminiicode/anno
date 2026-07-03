@@ -183,6 +183,46 @@ test('an AI reply with change.hunks renders a Show diff toggle that reveals/hide
   assert.equal(panel.dataset.built, '1', 'diff cached after first build');
 });
 
+test('comments render in text order regardless of insertion order', () => {
+  store.loadDoc({ filePath: '/tmp/doc.md', rawText: 'Alpha Beta Gamma Delta words', comments: [] });
+  const mk = (id, start) => ({
+    id, quote: id, body: id, author: 'Me', createdAt: '2026-01-01T00:00:00Z',
+    status: 'open', replies: [], start, end: start + 3,
+  });
+  store.setComments([mk('g', 12), mk('a', 0), mk('d', 18), mk('b', 6)]);
+  store.render();
+  const order = [...commentList.querySelectorAll('.comment-card')].map((c) => c.dataset.commentId);
+  assert.deepEqual(order, ['a', 'b', 'g', 'd'], 'cards sorted by anchor offset, not insertion order');
+});
+
+// The bug: a comment whose highlight span is absent (quote mid-rewrite/removed) was dumped to the
+// sidebar bottom because layoutComments ordered by live rects (no rect → Infinity). Must follow c.start.
+test('a comment with no live highlight still lays out above a later anchored comment', () => {
+  store.loadDoc({ filePath: '/tmp/doc.md', rawText: 'x', comments: [] });
+  const content = document.getElementById('content');
+  content.innerHTML = '<p>text <span class="comment-highlight" data-comment-id="late">later</span></p>';
+  const rect = (top) => () => ({ top, bottom: top + 12, height: 12, left: 0, right: 0, width: 0 });
+  content.querySelector('.comment-highlight[data-comment-id="late"]').getBoundingClientRect = rect(500);
+  content.getBoundingClientRect = rect(0);
+
+  const mk = (id, start) => ({
+    id, quote: id, body: id, author: 'Me', createdAt: '2026-01-01T00:00:00Z',
+    status: 'open', replies: [], start, end: start + 3,
+  });
+  store.setComments([mk('early', 0), mk('late', 100)]);
+  store.render();
+
+  const top = (id) => parseFloat(commentList.querySelector(`.comment-card[data-comment-id="${id}"]`).style.top);
+  try {
+    assert.ok(top('early') < top('late'), `early card (${top('early')}) must sit above the later card (${top('late')})`);
+  } finally {
+    // shared document across tests: leftover text nodes make offsetsToRange resolve a Range whose
+    // getBoundingClientRect jsdom omits, throwing in a later composer test — reset the stubs
+    content.innerHTML = '';
+    delete content.getBoundingClientRect;
+  }
+});
+
 test('an AI reply without change renders no Show diff toggle', () => {
   diskComments = [{
     id: 'c1', quote: 'q', body: 'b', author: 'Me', createdAt: '2026-06-20T00:00:00Z',
@@ -278,6 +318,32 @@ test('clicking a commented image focuses its comment; an uncommented image opens
 
   uncommented.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   assert.equal(addBtn.hidden, false, 'uncommented image surfaces the add-comment button');
+});
+
+// spans are rebuilt by morphdom, so clicks are delegated on contentEl — a click on a text highlight
+// must still focus its comment (and :not(.pending) not swallow the composing selection).
+test('clicking a text highlight focuses its comment via the delegated listener', async () => {
+  const { applyHighlights } = await import('../renderer/anchoring.js');
+  await import('../renderer/selection.js');
+  const contentEl = document.getElementById('content');
+  store.loadDoc({ filePath: '/tmp/doc.md', rawText: 'alpha beta gamma', comments: [] });
+  contentEl.innerHTML = '<p>alpha beta gamma</p>';
+  store.setComments([{
+    id: 'c1', quote: 'beta', body: 'b', author: 'Me',
+    createdAt: '2026-01-01T00:00:00Z', status: 'open', replies: [], start: 6, end: 10,
+  }]);
+  applyHighlights();
+  renderComments();
+  try {
+    const span = contentEl.querySelector('.comment-highlight[data-comment-id="c1"]');
+    assert.ok(span, 'highlight span painted');
+    span.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    assert.equal(state.activeId, 'c1', 'clicking the highlight sets its comment active');
+    const card = commentList.querySelector('.comment-card[data-comment-id="c1"]');
+    assert.ok(card && card.classList.contains('active'), 'the comment card is focused');
+  } finally {
+    contentEl.innerHTML = ''; // shared document — leftover spans break later Range-based tests
+  }
 });
 
 // Cmd/Ctrl+Enter starts a comment ONLY when a doc selection (or image) is pending.
