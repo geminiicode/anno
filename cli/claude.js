@@ -7,18 +7,37 @@ function killActiveChild() {
   if (activeChild) activeChild.kill();
 }
 
+// Pull the reply array out of free-form model text. Can't anchor on first-`[`/last-`]`:
+// a reply routinely carries a stray bracket before the array — a log timestamp `[12:53:43]`,
+// a markdown `[link]`, a citation — which that span would swallow and fail to parse. Instead
+// scan every top-level `[…]`, string-aware so brackets inside JSON strings don't miscount, and
+// return the first that parses to an array of reply objects (prefer ones with an `id`).
 function extractJsonArray(text) {
   if (!text) return null;
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const candidate = fence ? fence[1] : text;
-  const start = candidate.indexOf('[');
-  const end = candidate.lastIndexOf(']');
-  if (start === -1 || end === -1 || end < start) return null;
-  try {
-    return JSON.parse(candidate.slice(start, end + 1));
-  } catch {
-    return null;
+  let fallback = null;
+  for (let i = 0; i < candidate.length; i++) {
+    if (candidate[i] !== '[') continue;
+    let depth = 0, inStr = false, esc = false, end = -1;
+    for (let j = i; j < candidate.length; j++) {
+      const ch = candidate[j];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === '\\') esc = true;
+        else if (ch === '"') inStr = false;
+      } else if (ch === '"') inStr = true;
+      else if (ch === '[') depth++;
+      else if (ch === ']' && --depth === 0) { end = j; break; }
+    }
+    if (end === -1) continue; // unbalanced from here — no closer, later `[`s can't do better
+    let parsed;
+    try { parsed = JSON.parse(candidate.slice(i, end + 1)); } catch { continue; }
+    if (!Array.isArray(parsed)) continue;
+    if (parsed.some((r) => r && typeof r === 'object' && 'id' in r)) return parsed;
+    if (!fallback) fallback = parsed; // a parseable array, but not obviously replies — keep looking
   }
+  return fallback;
 }
 
 // seen: `${mdPath}\n${id}` -> reply count already forwarded; null = cold (send all).

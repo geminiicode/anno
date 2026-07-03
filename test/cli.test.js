@@ -30,6 +30,20 @@ test('extractJsonArray returns null on garbage and empty input', () => {
   assert.equal(extractJsonArray('[broken'), null);
 });
 
+// Regression: a stray `[` before the real array (a `[12:53:43]` timestamp, a markdown
+// [link]) once got swallowed by first-`[`/last-`]` slicing, erroring the whole batch.
+test('extractJsonArray skips a leading bracket that is not the reply array', () => {
+  const arr = [{ id: 'c1', reply: 'done', hunks: [] }];
+  assert.deepEqual(extractJsonArray('[12:53:43] ' + JSON.stringify(arr)), arr);
+  assert.deepEqual(extractJsonArray('see [docs] then ' + JSON.stringify(arr)), arr);
+  assert.deepEqual(extractJsonArray('note [1,2] first ' + JSON.stringify(arr)), arr);
+});
+
+test('extractJsonArray is not fooled by brackets inside JSON strings', () => {
+  const arr = [{ id: 'c1', reply: 'has ] and [ inside' }];
+  assert.deepEqual(extractJsonArray('[00:00:00] ' + JSON.stringify(arr)), arr);
+});
+
 // ---------- mergeReplies ----------
 
 test('mergeReplies marks addressed, attaches reply, re-anchors quote', () => {
