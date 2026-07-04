@@ -14,6 +14,13 @@ highlight + comment  ──▶  anno revises via your Claude Code  ──▶  ed
 
 > **Note:** anno was developed entirely with AI ([Claude Code](https://claude.com/claude-code)) and has only been tested on macOS.
 
+## Features
+
+- **Threaded comments** — reply to a comment to steer the revision, keep the back-and-forth attached to the exact selection.
+- **Resolved-state tracking** — every comment is open or resolved; hide the resolved ones (`⌘⇧H`) to see what's left.
+- **Per-comment diffs** — see exactly what anno changed for each comment, not one opaque rewrite of the whole file.
+- **Folder sessions** — open a folder to get a file tree and tabs; comment across many documents in one shared Claude session that carries context between files.
+
 ## Getting started
 
 ```bash
