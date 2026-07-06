@@ -5,6 +5,7 @@ import { focusComment } from './comment-layout.js';
 import { renderTabs } from './tabs.js';
 import { paintActiveTree } from './filetree.js';
 import { resolveImageSrcs } from './images.js';
+import { renderMermaidBlocks } from './mermaid.js';
 import { applyHighlights } from './anchoring.js';
 import * as store from './store.js';
 import * as tabsStore from './tabs-store.js';
@@ -23,6 +24,13 @@ export function renderDoc() {
     base.innerHTML = DOMPurify.sanitize(marked.parse(state.rawText));
     resolveImageSrcs(base, state.filePath); // src rewrite is filePath/rawText-stable too
     baseCache = { file: state.filePath, raw: state.rawText, tree: base };
+    // mermaid.render is async; render into the cached tree then re-render so every clone
+    // carries the SVG. token guards against a file switch landing before this resolves —
+    // baseCache identity changes on rebuild, so a stale render won't re-trigger.
+    const token = baseCache;
+    renderMermaidBlocks(base).then((changed) => {
+      if (changed && baseCache === token) renderDoc();
+    });
   }
   const fresh = baseCache.tree.cloneNode(true);
   applyHighlights(fresh);
@@ -32,6 +40,14 @@ export function renderDoc() {
 // priority 0 so the doc morphs in before comments.js's sidebar subscriber (priority 10) measures
 // its highlight rects — the ordering is explicit here, not a side effect of import order.
 store.subscribe(renderDoc, 0);
+
+// OS light/dark flip re-themes CSS via variables automatically, but an already-rendered mermaid
+// SVG has its colors baked in — bust the parse cache so the diagram re-renders in the new theme.
+// (guarded: jsdom in tests has no matchMedia; real Electron always does.)
+window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  baseCache = { file: null, raw: null, tree: null };
+  renderDoc();
+});
 
 function showActive(scrollTop) {
   currentFileEl.textContent = prettyPath(state.filePath);

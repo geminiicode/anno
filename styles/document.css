@@ -21,6 +21,10 @@
   font-size: 85%;
 }
 #content pre code { background: none; padding: 0; }
+#content .mermaid-diagram { margin: 1em 0; text-align: center; }
+#content .mermaid-diagram svg { max-width: 100%; height: auto; }
+/* a diagram that failed to parse keeps its source fence; tint it so it reads as an error, not code */
+#content pre.mermaid-error { border: 1px solid var(--danger); }
 #content blockquote {
   margin: 0;
   padding-left: 1em;
