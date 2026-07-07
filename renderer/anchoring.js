@@ -12,9 +12,8 @@ const PENDING_ID = '__pending__';
 
 function getTextNodes(root) {
   const nodes = [];
-  // skip rendered mermaid SVG: its <text>/<tspan> labels are not prose, so they must not
-  // enter the anchoring offset space — else a comment quote colliding with a diagram label
-  // detaches, or a match lands inside the SVG and surroundContents corrupts the diagram
+  // skip mermaid SVG label text — not prose: in the offset space a quote colliding with a
+  // diagram label detaches the comment, or a match inside the SVG lets surroundContents corrupt it
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode: (n) =>
       n.parentElement?.closest('.mermaid-diagram')

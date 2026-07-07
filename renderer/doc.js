@@ -24,9 +24,8 @@ export function renderDoc() {
     base.innerHTML = DOMPurify.sanitize(marked.parse(state.rawText));
     resolveImageSrcs(base, state.filePath); // src rewrite is filePath/rawText-stable too
     baseCache = { file: state.filePath, raw: state.rawText, tree: base };
-    // mermaid.render is async; render into the cached tree then re-render so every clone
-    // carries the SVG. token guards against a file switch landing before this resolves —
-    // baseCache identity changes on rebuild, so a stale render won't re-trigger.
+    // async: render mermaid into the cached tree, then re-render so clones carry the SVG. token
+    // pins this cache entry — a file switch rebuilds baseCache, so a stale render won't re-trigger.
     const token = baseCache;
     renderMermaidBlocks(base).then((changed) => {
       if (changed && baseCache === token) renderDoc();
@@ -41,9 +40,8 @@ export function renderDoc() {
 // its highlight rects — the ordering is explicit here, not a side effect of import order.
 store.subscribe(renderDoc, 0);
 
-// OS light/dark flip re-themes CSS via variables automatically, but an already-rendered mermaid
-// SVG has its colors baked in — bust the parse cache so the diagram re-renders in the new theme.
-// (guarded: jsdom in tests has no matchMedia; real Electron always does.)
+// CSS re-themes off variables, but a rendered mermaid SVG has its colors baked in — bust the
+// cache on an OS scheme flip so the diagram re-renders in the new theme
 window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener('change', () => {
   baseCache = { file: null, raw: null, tree: null };
   renderDoc();

@@ -1,13 +1,10 @@
-// marked renders ```mermaid fences as inert <pre><code class="language-mermaid">; this turns
-// those into inline SVG via the mermaid UMD global (window.mermaid, loaded in index.html).
-// Runs on the cached base tree (see doc.js) so a diagram renders once per file, not per morph.
+// marked emits ```mermaid fences as inert <pre><code class="language-mermaid">; render them to
+// inline SVG via the mermaid UMD global. Called on doc.js's cached tree — once per file, not per morph.
 
 let counter = 0;
 let themedDark = null;
 
-// mermaid.initialize is idempotent and cheap; re-run only when the OS scheme flips so a
-// dark-mode toggle re-themes on the next render. securityLevel 'strict' sanitizes diagram
-// labels (we inject the returned SVG directly, bypassing DOMPurify).
+// theme is baked at initialize(), so re-init when the OS scheme flips to re-theme the next render
 function ensureInit() {
   const dark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
   if (themedDark === dark) return;
@@ -16,31 +13,39 @@ function ensureInit() {
     securityLevel: 'strict',
     theme: dark ? 'dark' : 'default',
     fontFamily: 'inherit',
+    // SVG <text> labels, not foreignObject — DOMPurify (below) drops foreignObject, blanking every label
+    htmlLabels: false,
+    flowchart: { htmlLabels: false },
   });
   themedDark = dark;
 }
 
-// Replace every mermaid code block in `tree` with its rendered SVG, in place.
-// Resolves true if anything changed so the caller can re-render the live DOM.
-export async function renderMermaidBlocks(tree) {
+// mermaid.render shares a measurement sandbox on document.body, so overlapping calls (a fast file
+// switch) corrupt each other — serialize; swallow rejections so one bad batch can't wedge the chain
+let chain = Promise.resolve();
+export function renderMermaidBlocks(tree) {
+  const run = chain.then(() => renderBlocks(tree));
+  chain = run.catch(() => {});
+  return run;
+}
+
+async function renderBlocks(tree) {
   if (!window.mermaid) return false;
   const blocks = tree.querySelectorAll('pre > code.language-mermaid');
   if (!blocks.length) return false;
   ensureInit();
-  // sequential: mermaid.render mutates a shared measurement sandbox on document.body per call,
-  // so overlapping renders in one batch can interleave — await each before starting the next
   for (const code of blocks) {
     const pre = code.closest('pre');
     try {
       const { svg } = await window.mermaid.render(`anno-mmd-${counter++}`, code.textContent);
       const fig = document.createElement('div');
       fig.className = 'mermaid-diagram';
-      fig.innerHTML = svg;
+      // the only render path that skips doc.js's DOMPurify — strict already sanitized, this is belt-and-suspenders
+      fig.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true } });
       pre.replaceWith(fig);
     } catch {
-      // malformed diagram — leave the source fence visible, flag it so it's not mistaken for prose
-      pre.classList.add('mermaid-error');
+      pre.classList.add('mermaid-error'); // keep the source fence visible, tinted as an error
     }
   }
-  return true; // guard clauses above already returned false for the no-blocks cases
+  return true;
 }
