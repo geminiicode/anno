@@ -27,8 +27,8 @@ export async function renderMermaidBlocks(tree) {
   const blocks = tree.querySelectorAll('pre > code.language-mermaid');
   if (!blocks.length) return false;
   ensureInit();
-  let changed = false;
-  // sequential: mermaid.render reuses a fixed temp DOM id internally, so concurrent renders race
+  // sequential: mermaid.render mutates a shared measurement sandbox on document.body per call,
+  // so overlapping renders in one batch can interleave — await each before starting the next
   for (const code of blocks) {
     const pre = code.closest('pre');
     try {
@@ -41,7 +41,6 @@ export async function renderMermaidBlocks(tree) {
       // malformed diagram — leave the source fence visible, flag it so it's not mistaken for prose
       pre.classList.add('mermaid-error');
     }
-    changed = true;
   }
-  return changed;
+  return true; // guard clauses above already returned false for the no-blocks cases
 }

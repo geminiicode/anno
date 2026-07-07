@@ -12,7 +12,15 @@ const PENDING_ID = '__pending__';
 
 function getTextNodes(root) {
   const nodes = [];
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  // skip rendered mermaid SVG: its <text>/<tspan> labels are not prose, so they must not
+  // enter the anchoring offset space — else a comment quote colliding with a diagram label
+  // detaches, or a match lands inside the SVG and surroundContents corrupts the diagram
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) =>
+      n.parentElement?.closest('.mermaid-diagram')
+        ? NodeFilter.FILTER_REJECT
+        : NodeFilter.FILTER_ACCEPT,
+  });
   let n;
   while ((n = walker.nextNode())) nodes.push(n);
   return nodes;
@@ -63,7 +71,9 @@ export function offsetsToRange(start, end, root = contentEl) {
 }
 
 export function fullText(root = contentEl) {
-  return root.textContent;
+  // derive from getTextNodes (not root.textContent) so the anchoring string stays byte-identical
+  // to what offsetsToRange walks — including the mermaid-diagram exclusion, so the two can't drift
+  return getTextNodes(root).map((n) => n.nodeValue).join('');
 }
 
 function locateRange(comment, root = contentEl) {
