@@ -385,6 +385,21 @@ test('a comments-only reload keeps untouched doc text nodes identical (live sele
   assert.equal(node1.nodeValue, 'First paragraph stays put.');
 });
 
+test('rendered mermaid label text is excluded from the anchoring offset space', async () => {
+  // A diagram label matching a comment quote must not enter the anchoring offset space, or the
+  // quote goes non-unique and the comment silently detaches (or a match inside the SVG corrupts it).
+  const { fullText } = await import('../renderer/anchoring.js');
+  const root = document.createElement('div');
+  root.innerHTML =
+    '<p>Resolve a comment to grey it out.</p>' +
+    '<div class="mermaid-diagram"><svg><g><text>Resolve</text></g></svg></div>';
+
+  const text = fullText(root);
+  assert.ok(text.includes('Resolve a comment'), 'prose is kept');
+  assert.equal(text.split('Resolve').length - 1, 1, 'the diagram label "Resolve" is NOT counted');
+  assert.ok(!text.includes('<svg>'), 'no markup leaks into the text space');
+});
+
 test('absorbed verdict closes the file-tabs and opens the folder-tab', async () => {
   files.set('/dir/a.md', '# A');
   files.set('/dir/b.md', '# B');

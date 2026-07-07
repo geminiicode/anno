@@ -26,4 +26,15 @@ function hello(name) {
 }
 ```
 
+### And so are mermaid diagrams
+
+```mermaid
+graph LR
+  A[Write] --> B[Comment]
+  B --> C{Address?}
+  C -->|yes| D[Revise]
+  C -->|no| E[Resolve]
+  D --> B
+```
+
 **That's it — happy reading. 🙂**

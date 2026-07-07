@@ -5,6 +5,7 @@ import { focusComment } from './comment-layout.js';
 import { renderTabs } from './tabs.js';
 import { paintActiveTree } from './filetree.js';
 import { resolveImageSrcs } from './images.js';
+import { renderMermaidBlocks } from './mermaid.js';
 import { applyHighlights } from './anchoring.js';
 import * as store from './store.js';
 import * as tabsStore from './tabs-store.js';
@@ -23,6 +24,12 @@ export function renderDoc() {
     base.innerHTML = DOMPurify.sanitize(marked.parse(state.rawText));
     resolveImageSrcs(base, state.filePath); // src rewrite is filePath/rawText-stable too
     baseCache = { file: state.filePath, raw: state.rawText, tree: base };
+    // async: render mermaid into the cached tree, then re-render so clones carry the SVG. token
+    // pins this cache entry — a file switch rebuilds baseCache, so a stale render won't re-trigger.
+    const token = baseCache;
+    renderMermaidBlocks(base).then((changed) => {
+      if (changed && baseCache === token) renderDoc();
+    });
   }
   const fresh = baseCache.tree.cloneNode(true);
   applyHighlights(fresh);
@@ -32,6 +39,13 @@ export function renderDoc() {
 // priority 0 so the doc morphs in before comments.js's sidebar subscriber (priority 10) measures
 // its highlight rects — the ordering is explicit here, not a side effect of import order.
 store.subscribe(renderDoc, 0);
+
+// CSS re-themes off variables, but a rendered mermaid SVG has its colors baked in — bust the
+// cache on an OS scheme flip so the diagram re-renders in the new theme
+window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  baseCache = { file: null, raw: null, tree: null };
+  renderDoc();
+});
 
 function showActive(scrollTop) {
   currentFileEl.textContent = prettyPath(state.filePath);
