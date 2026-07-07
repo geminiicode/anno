@@ -386,9 +386,8 @@ test('a comments-only reload keeps untouched doc text nodes identical (live sele
 });
 
 test('rendered mermaid label text is excluded from the anchoring offset space', async () => {
-  // Regression: getTextNodes/fullText used to sweep the whole tree, so a diagram whose SVG
-  // label matched a comment quote made that quote non-unique — the comment silently detached
-  // (or a match landed inside the SVG and corrupted it). Both must anchor to prose only.
+  // A diagram label matching a comment quote must not enter the anchoring offset space, or the
+  // quote goes non-unique and the comment silently detaches (or a match inside the SVG corrupts it).
   const { fullText } = await import('../renderer/anchoring.js');
   const root = document.createElement('div');
   root.innerHTML =
