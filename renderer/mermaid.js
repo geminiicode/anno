@@ -10,12 +10,9 @@ function ensureInit() {
   if (themedDark === dark) return;
   window.mermaid.initialize({
     startOnLoad: false,
-    securityLevel: 'strict',
+    securityLevel: 'strict', // mermaid runs its own DOMPurify + strips javascript: URLs on the SVG
     theme: dark ? 'dark' : 'default',
     fontFamily: 'inherit',
-    // SVG <text> labels, not foreignObject — DOMPurify (below) drops foreignObject, blanking every label
-    htmlLabels: false,
-    flowchart: { htmlLabels: false },
   });
   themedDark = dark;
 }
@@ -40,8 +37,7 @@ async function renderBlocks(tree) {
       const { svg } = await window.mermaid.render(`anno-mmd-${counter++}`, code.textContent);
       const fig = document.createElement('div');
       fig.className = 'mermaid-diagram';
-      // the only render path that skips doc.js's DOMPurify — strict already sanitized, this is belt-and-suspenders
-      fig.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true } });
+      fig.innerHTML = svg;
       pre.replaceWith(fig);
     } catch {
       pre.classList.add('mermaid-error'); // keep the source fence visible, tinted as an error
