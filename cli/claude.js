@@ -138,21 +138,21 @@ function buildPrompt(mdPath, openComments, seen = null, manifest = null) {
 }
 
 // prompt on stdin: argv would hit ARG_MAX on large comment sets.
-// Resolves { stdout, stderr, code }, NEVER rejects on non-zero exit: an Edit may have
-// fired before claude failed and the json envelope can't tell, so the caller classifies
-// the raw signals (see addressCore).
+// NEVER rejects on non-zero exit: an Edit may have fired before claude failed and the
+// json envelope can't tell, so the caller classifies the raw signals.
 function runClaude(prompt, cwd, { sessionId, name } = {}) {
   return new Promise((resolve, reject) => {
-    // Fence Read/Edit to the review tree: the doc + comments are in the prompt, so a prompt-
-    // injecting doc can drive Edit — bare `Read,Edit` would auto-approve any writable path
-    // (~/.zshrc, ~/.ssh). Out-of-tree calls fall to a prompt, which headless -p denies.
-    const root = cwd || process.cwd();
+    // Fence Read/Edit to the review tree: doc + comments are in the prompt, so a prompt-injecting
+    // doc can drive Edit, and bare `Read,Edit` under acceptEdits auto-approves ~/.zshrc, ~/.ssh.
+    // resolve+join, not interpolation — `//root/**` matches only while the matcher normalizes it.
+    const root = path.resolve(cwd || process.cwd());
+    const scope = path.join(root, '**');
     const args = [
       '-p',
       '--permission-mode',
       'acceptEdits',
       '--allowedTools',
-      `Read(/${root}/**),Edit(/${root}/**)`,
+      `Read(${scope}),Edit(${scope})`,
       '--output-format',
       'json',
     ];

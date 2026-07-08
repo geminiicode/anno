@@ -48,7 +48,7 @@ anno list <file.md>            # show comments and their statuses
 
 `anno` runs Claude with `--permission-mode acceptEdits` and the document and comments are part of the prompt, so **reviewing a file effectively grants its author the ability to run Claude as you.** Two things to be clear about:
 
-- **Edit is not directory-sandboxed.** Claude is limited to `Read,Edit` (not `Write`, so it can't create new files), but Edit can modify **any existing file your user account can write** — not just files in the document's folder. A malicious comment could target `~/.zshrc`, a config file, or source in a parent repo.
+- **Edit is fenced to the review tree, and that fence is the only thing between a comment and your home directory.** Claude gets `Read` and `Edit` scoped to the folder you opened — not `Write`, so it can't create new files, and not `~/.zshrc` or a parent repo. An out-of-tree edit falls through to a permission prompt, which the headless session denies. But **everything under the root you open is in scope**, so opening a folder means every existing file beneath it is writable by a prompt-injecting comment in any document you review. Open the narrowest folder that does the job.
 - **A folder tab shares one Claude session across all its documents.** Context carries between files (that's the point), which means a prompt-injecting comment in one document can influence Claude's revisions of the *other* documents in that folder for as long as the tab is open. Closing the tab is what ends the shared session.
 
 Only run the loop on files and folders you trust.
