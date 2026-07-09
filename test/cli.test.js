@@ -1,3 +1,4 @@
+require('./helpers/store-env.js'); // must precede any core/ import
 const test = require('node:test');
 const assert = require('node:assert/strict');
 

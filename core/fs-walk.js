@@ -38,7 +38,6 @@ function listDirs(dir) {
   return out;
 }
 
-// skip-check dirs only (basename excluded): it may be a dot-prefixed sidecar we still accept
 function pathInScope(root, full) {
   const rel = path.relative(root, full);
   if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return false;

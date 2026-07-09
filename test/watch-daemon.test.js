@@ -6,15 +6,25 @@
 //   - parent death (GUI crash / kill -9) → self-exit via the ppid poll
 // No claude/GUI needed: the sweep fixture has no OPEN comment, so no batch ever
 // spawns the agent.
+require('./helpers/store-env.js'); // must precede any core/ import; spawned daemons inherit it
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const { writeComments, readComments } = require('../core/sidecar.js');
+const { createStoreRouter } = require('../cli/watch.js');
+const { storeRoot, canonical } = require('../core/paths.js');
 
 const DAEMON = path.join(__dirname, '..', 'cli', 'watch-daemon.js');
+
+// Mirrors storePath()'s key so a test can name a store file by the doc it belongs
+// to — or deliberately misname it (test d).
+const hashOf = (p) => crypto.createHash('sha256').update(canonical(p)).digest('hex');
+const writeStoreFile = (name, obj) =>
+  fs.writeFileSync(path.join(storeRoot(), name), JSON.stringify(obj));
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -61,6 +71,102 @@ function waitForBanner(child) {
     child.stdout.on('data', onData);
   });
 }
+
+// A folder-tab tree with one real markdown doc; returns the canonical root (what
+// watch() passes as abs/watchDir) and the canonical doc path (what `doc` stores).
+function tmpTree() {
+  const root = canonical(fs.mkdtempSync(path.join(os.tmpdir(), 'anno-store-tree-')));
+  const md = path.join(root, 'doc.md');
+  fs.writeFileSync(md, '# Doc\n\ntext\n');
+  return { root, md: canonical(md) };
+}
+
+const makeRouter = (root, enqueued, index = new Map()) =>
+  createStoreRouter({ enqueue: (p) => enqueued.push(p), isDir: true, abs: root, watchDir: root, index });
+
+// (a) scope guard: a store file whose `doc` resolves outside the watched tree is
+// dropped — this is the last guard now that the trigger left the tree (§5).
+test('store router: a doc outside the watched tree never enqueues', () => {
+  const { root } = tmpTree();
+  const outside = path.join(os.tmpdir(), 'anno-elsewhere', 'evil.md');
+  const name = hashOf(outside) + '.json';
+  writeStoreFile(name, { version: 2, doc: outside, comments: [{ id: 'x' }] });
+  const enqueued = [];
+  makeRouter(root, enqueued)(name);
+  assert.deepEqual(enqueued, [], 'out-of-tree doc must not be addressed');
+});
+
+// (b) filter: the tmp file is valid, in-scope JSON about to vanish; only the
+// filename filter (not a read) may block it, so give it an in-tree doc.
+test('store router: a .tmp or .corrupt event never enqueues', () => {
+  const { root, md } = tmpTree();
+  const base = hashOf(md) + '.json';
+  writeStoreFile(base + '.9999.tmp', { version: 2, doc: md, comments: [{ id: 'x' }] });
+  writeStoreFile(base + '.corrupt', { version: 2, doc: md, comments: [{ id: 'x' }] });
+  const enqueued = [];
+  const route = makeRouter(root, enqueued);
+  route(base + '.9999.tmp');
+  route(base + '.corrupt');
+  assert.deepEqual(enqueued, [], 'only exact <hash>.json may enqueue');
+});
+
+// (c) unlink: the empty-list delete removes the file, so the contents are gone —
+// the seeded index is the only thing that can route the delete to its doc.
+test('store router: an unlink routes via the index to the right document', () => {
+  const { root, md } = tmpTree();
+  const name = hashOf(md) + '.json';
+  // File intentionally absent (unlinked); index carries the mapping.
+  const index = new Map([[hashOf(md), md]]);
+  const enqueued = [];
+  makeRouter(root, enqueued, index)(name);
+  assert.deepEqual(enqueued, [md], 'unlink event addresses the doc named in the index');
+});
+
+// (d) check/use invariant: a file whose `doc` (in-scope) and filename-hash
+// disagree enqueues the validated path, but the smuggled comments are never
+// applied — addressCore re-reads by hashing that path, landing on a different
+// (empty) store file, not this crafted one.
+test('store router: doc and filename-hash disagreeing applies nothing', () => {
+  const { root, md } = tmpTree();
+  const wrongName = '0'.repeat(64) + '.json'; // not hashOf(md)
+  const malicious = [{ id: 'evil', quote: 'x', body: 'rm -rf', status: 'open' }];
+  writeStoreFile(wrongName, { version: 2, doc: md, comments: malicious });
+  const enqueued = [];
+  makeRouter(root, enqueued)(wrongName);
+  assert.deepEqual(enqueued, [md], 'enqueues the validated path, not the crafted file');
+  // The payload was never trusted: re-reading by the validated path re-hashes to
+  // <hash(md)>.json, which does not exist, so nothing is applied.
+  assert.deepEqual(readComments(md), [], 'smuggled comments are not readable via the validated path');
+});
+
+// (e) index eviction: routing an unlink drops the hash, so a stray second unlink
+// for the same (still-absent) file has nothing to route to.
+test('store router: a second unlink for the same hash is dropped', () => {
+  const { root, md } = tmpTree();
+  const name = hashOf(md) + '.json'; // file intentionally absent (unlinked)
+  const index = new Map([[hashOf(md), md]]);
+  const enqueued = [];
+  const route = makeRouter(root, enqueued, index);
+  route(name); // first unlink routes via the index, then evicts the hash
+  route(name); // index forgot it + store file still gone → nothing to route
+  assert.deepEqual(enqueued, [md], 'the unlink must not re-fire once the index forgot it');
+});
+
+// (f) the strict guard the GUI previously lacked: a `doc` textually inside the
+// tree but symlinked out passes pathInScope yet must fail realpathSync containment.
+test('store router: a symlinked-out doc that passes a textual check is rejected', () => {
+  const { root } = tmpTree();
+  const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'anno-symlink-out-'));
+  const realMd = path.join(outsideDir, 'real.md');
+  fs.writeFileSync(realMd, '# Real\n\ntext\n');
+  const link = path.join(root, 'link.md'); // textually under root; realpaths outside
+  fs.symlinkSync(realMd, link);
+  const name = hashOf(link) + '.json';
+  writeStoreFile(name, { version: 2, doc: link, comments: [{ id: 'x' }] });
+  const enqueued = [];
+  makeRouter(root, enqueued)(name);
+  assert.deepEqual(enqueued, [], 'realpathSync containment must reject a symlink pointing out of the tree');
+});
 
 test('startup sweeps a stranded 👀 marker to errored (no agent spawned)', async () => {
   // working:true with no live daemon = a marker a crashed watcher left behind.

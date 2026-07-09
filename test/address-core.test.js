@@ -1,6 +1,7 @@
 // Drives the assembled address loop (envelope unwrap → extract → fresh-reread
 // reconcile → write) with a fake runClaude and a real temp sidecar. cli.test.js
 // covers the pure pieces (extractJsonArray, mergeReplies) separately.
+require('./helpers/store-env.js'); // must precede any core/ import
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');

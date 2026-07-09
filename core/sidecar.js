@@ -1,5 +1,5 @@
 const fs = require('fs');
-const path = require('path');
+const { canonical, storePath } = require('./paths');
 
 // Mirrored in helpers.js#normalizeComment (ESM, can't require this) — change both together.
 function statusOf(c) {
@@ -19,16 +19,10 @@ function isWorking(c, now = Date.now()) {
 }
 
 function sidecarPath(mdPath) {
-  const dir = path.dirname(mdPath);
-  const base = path.basename(mdPath);
-  return path.join(dir, '.' + base + '.comments.json');
+  return storePath(mdPath);
 }
 
-function mdPathForSidecar(sidecar) {
-  const base = path.basename(sidecar);
-  const m = base.match(/^\.(.+)\.comments\.json$/);
-  return m ? path.join(path.dirname(sidecar), m[1]) : null;
-}
+const corruptBackedUp = new Set();
 
 class CorruptSidecarError extends Error {
   constructor(p) {
@@ -52,23 +46,37 @@ function readComments(mdPath) {
   try {
     data = JSON.parse(raw);
   } catch {
-    try {
-      fs.copyFileSync(p, p + '.corrupt');
-    } catch {
-      /* backup is best-effort */
+    // Once per path: a store event routes back here on every watcher fire, and a
+    // permanently-broken file would otherwise rewrite its backup on each one.
+    if (!corruptBackedUp.has(p)) {
+      corruptBackedUp.add(p);
+      try {
+        fs.copyFileSync(p, p + '.corrupt');
+      } catch {
+        /* backup is best-effort */
+      }
     }
     throw new CorruptSidecarError(p);
   }
+  corruptBackedUp.delete(p); // parsed clean — a later re-corruption gets its own backup
   return Array.isArray(data.comments) ? data.comments : [];
 }
 
 // tmp + atomic rename so a crash mid-write can't truncate the live sidecar. Pid
 // in the tmp name: GUI and watch daemon both write the same sidecar, and a shared
 // tmp name would let one writer's rename pull the file from under the other → ENOENT.
+// Empty list unlinks rather than leaving a husk; readComments treats missing as [],
+// so this is behavior-neutral. Delete-event routing is the watcher index's job (§4.3).
 function writeComments(mdPath, comments) {
   const p = sidecarPath(mdPath);
+  if (comments.length === 0) {
+    fs.rmSync(p, { force: true });
+    return;
+  }
   const tmp = `${p}.${process.pid}.tmp`;
-  const data = JSON.stringify({ version: 1, comments }, null, 2);
+  // doc is a stored reverse mapping (sha256 isn't invertible) — load-bearing for
+  // watcher routing and anno clean.
+  const data = JSON.stringify({ version: 2, doc: canonical(mdPath), comments }, null, 2);
   // 'wx' won't follow a pre-planted tmp symlink; a stale tmp is ours (pid-scoped)
   // from a crashed write, so it's safe to replace.
   try {
@@ -86,7 +94,6 @@ module.exports = {
   isWorking,
   WORKING_STALE_MS,
   sidecarPath,
-  mdPathForSidecar,
   readComments,
   writeComments,
   CorruptSidecarError,
