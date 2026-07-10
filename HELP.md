@@ -23,6 +23,25 @@ Shortcuts below use `⌘` (Command) on macOS. On Windows and Linux, use `Ctrl`.
 
 ---
 
+## Command line
+
+Comments live in a per-user store under `~/.anno/store/`, keyed by the document's
+path — never next to the document, so they stay out of `git status`.
+
+| Command | What it does |
+|---------|--------------|
+| `anno review <file.md\|folder>` | Open the editor and auto-address comments (the full loop) |
+| `anno list <file.md>` | Show comments and their statuses |
+| `anno clean <path> [--force]` | Reap store entries whose document is gone, under `<path>`. Dry-run without `--force`. |
+| `anno clean --legacy <path> [--force]` | Sweep old co-located `.comments.json` files (a pre-store layout) off disk, under `<path>`. Dry-run without `--force`. |
+
+`anno clean` requires a `<path>` and never runs on its own: a document that is
+merely absent (a branch switch, a worktree, an unmounted volume) is not gone, so
+its comments are only reaped once you point `clean` at that tree and pass
+`--force`. `--legacy` files are litter — they are deleted, never migrated.
+
+---
+
 ## Tips
 
 - **Folders** open the whole tree in the left sidebar — comment across many files in

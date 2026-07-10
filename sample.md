@@ -5,9 +5,9 @@ click the 💬 Comment button that appears above your selection.
 
 ## How commenting works
 
-Comments are anchored to the *exact text you highlight*. They are saved next to
-this file as `sample.md.comments.json`, so they travel with the document and
-play nicely with git.
+Comments are anchored to the *exact text you highlight*. They are saved in a
+per-user store under `~/.anno/store/`, keyed by this file's path — never beside
+the document, so they stay out of `git status`.
 
 - Select text to leave a comment
 - Click a highlight or a card to jump between them

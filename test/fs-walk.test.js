@@ -10,11 +10,6 @@ test('pathInScope: a markdown file directly under root is in scope', () => {
   assert.equal(pathInScope(p('a'), p('a', 'doc.md')), true);
 });
 
-test('pathInScope: a dot-prefixed sidecar basename is allowed (skip applies to dirs)', () => {
-  assert.equal(pathInScope(p('a'), p('a', '.doc.md.comments.json')), true);
-  assert.equal(pathInScope(p('a'), p('a', 'sub', '.doc.md.comments.json')), true);
-});
-
 test('pathInScope: node_modules anywhere in the path is out of scope', () => {
   assert.equal(pathInScope(p('a'), p('a', 'node_modules', 'pkg', 'readme.md')), false);
 });

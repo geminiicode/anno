@@ -6,22 +6,14 @@ const { spawn } = require('child_process');
 const sidecar = require('./core/sidecar');
 const { MD_EXTENSIONS, MD_RE } = require('./core/markdown-ext');
 const { listMarkdownFiles, listDirs, pathInScope } = require('./core/fs-walk');
+const { canonical, storeRoot, seedStoreIndex } = require('./core/paths');
+const { createStoreRouter } = require('./core/store-router');
 const overlap = require('./core/overlap');
 
 app.setName('anno');
 
 // GUI confirms before spawning a folder agent; the headless daemon can't prompt.
 const FOLDER_FILE_LIMIT = 2000;
-
-// Canonicalize at every renderer entry point so a file opened via two path
-// strings (/tmp symlink vs its realpath) is one tab keyed 1:1 with one daemon.
-function canonical(p) {
-  try {
-    return fsSync.realpathSync(p);
-  } catch {
-    return p; // not on disk yet
-  }
-}
 
 // Electron passes the app root (__dirname) as argv[1]; skip it or it reads as a
 // folder target. second-instance passes the forwarding process's argv.
@@ -242,32 +234,42 @@ function startTreeWatch(rootDir, recursive, onChange) {
   }
 }
 
+// Two watches, like watchTree: the doc's own directory for md edits, and the flat
+// store for comment writes. A single-file tab knows its one store filename, so it
+// needs no hash→doc index — the name alone routes a create, change, or unlink.
 function watchFile(wc, mdPath) {
   const dir = path.dirname(mdPath);
   const mdName = path.basename(mdPath);
-  const sidecarName = path.basename(sidecar.sidecarPath(mdPath));
+  const storeName = path.basename(sidecar.sidecarPath(mdPath));
   const debounce = {};
-  let watcher = null;
+  const watchers = [];
+  const fire = (kind) => {
+    // Debounce: editors/agents write in bursts (truncate + write).
+    clearTimeout(debounce[kind]);
+    debounce[kind] = setTimeout(() => {
+      if (!wc.isDestroyed()) wc.send('file:changed', { kind, mdPath, root: mdPath });
+    }, 150);
+  };
   try {
-    watcher = fsSync.watch(dir, (_e, filename) => {
-      if (!filename) return;
-      let kind = null;
-      if (filename === mdName) kind = 'md';
-      else if (filename === sidecarName) kind = 'comments';
-      if (!kind) return;
-      // Debounce: editors/agents write in bursts (truncate + write).
-      clearTimeout(debounce[kind]);
-      debounce[kind] = setTimeout(() => {
-        if (!wc.isDestroyed()) wc.send('file:changed', { kind, mdPath, root: mdPath });
-      }, 150);
-    });
+    watchers.push(fsSync.watch(dir, (_e, filename) => {
+      if (filename === mdName) fire('md');
+    }));
   } catch {
     /* live-reload watch failed; the agent still runs */
   }
+  try {
+    const sw = fsSync.watch(storeRoot(), (_e, filename) => {
+      if (filename === storeName) fire('comments');
+    });
+    sw.on('error', () => {}); // runtime FSWatcher error would crash the window; degrade live-reload instead
+    watchers.push(sw);
+  } catch {
+    /* comment live-reload failed; the agent still runs */
+  }
   return () => {
-    if (watcher) {
+    for (const w of watchers) {
       try {
-        watcher.close();
+        w.close();
       } catch {
         /* already closed */
       }
@@ -276,27 +278,24 @@ function watchFile(wc, mdPath) {
   };
 }
 
-// Debounced per file+kind so an md edit doesn't cancel a sibling sidecar edit.
+// Debounced per file+kind so an md edit doesn't cancel a sibling comment edit.
+// Two watches: the recursive tree for markdown edits (kind:'md'), and a
+// non-recursive watch on the flat store for comment writes (kind:'comments').
 function watchTree(wc, root) {
   const debounce = new Map();
-  const onChange = (baseDir, filename) => {
-    if (!filename) return;
-    const full = path.join(baseDir, filename);
-    let kind = null;
-    let mdPath = null;
-    if (MD_RE.test(filename)) {
-      kind = 'md';
-      mdPath = full;
-    } else {
-      const fromSidecar = sidecar.mdPathForSidecar(full);
-      if (fromSidecar) {
-        kind = 'comments';
-        mdPath = fromSidecar;
-      }
-    }
-    if (!kind) return;
-    // Recursive fs.watch fires for every node_modules/.git file too; scope it so
-    // an npm install doesn't wake us O(files) times.
+  // storeRoot() asserts ownership+mode and throws on a world-readable store; that
+  // must not take the tab down with it — live-reload degrades, the agent still runs.
+  let storeIndex = new Map();
+  try {
+    storeIndex = seedStoreIndex();
+  } catch {
+    /* store unusable; the store watch below fails the same way and is caught there */
+  }
+
+  const send = (kind, mdPath) => {
+    // Recursive fs.watch fires for every node_modules/.git file too, and the store
+    // is global (every window's writes wake us); scope so an npm install or an
+    // unrelated tab's comment doesn't reload this window.
     if (!pathInScope(root, mdPath)) return;
     const key = `${kind}:${mdPath}`;
     clearTimeout(debounce.get(key));
@@ -307,16 +306,47 @@ function watchTree(wc, root) {
       }, 150)
     );
   };
+
+  const onTree = (baseDir, filename) => {
+    if (!filename || !MD_RE.test(filename)) return;
+    send('md', path.join(baseDir, filename));
+  };
+
+  // Same router (strict realpathSync guard) as the CLI daemon. Its inScope
+  // supersedes send()'s textual pathInScope for comment events — a symlinked-out
+  // doc that pathInScope alone would pass is now rejected before reaching send().
+  const onStore = createStoreRouter({
+    enqueue: (mdPath) => send('comments', mdPath),
+    isDir: true,
+    abs: root,
+    watchDir: root,
+    index: storeIndex,
+  });
+
   let watchers = [];
   try {
-    watchers = startTreeWatch(root, true, onChange);
+    watchers = startTreeWatch(root, true, onTree);
   } catch {
     /* live-reload watch failed; the agent still runs */
+  }
+  let storeWatcher = null;
+  try {
+    storeWatcher = fsSync.watch(storeRoot(), (_e, filename) => onStore(filename));
+    storeWatcher.on('error', () => {}); // runtime FSWatcher error would crash the window; degrade live-reload instead
+  } catch {
+    /* store watch failed; md live-reload + the agent still run */
   }
   return () => {
     for (const w of watchers) {
       try {
         w.close();
+      } catch {
+        /* already closed */
+      }
+    }
+    if (storeWatcher) {
+      try {
+        storeWatcher.close();
       } catch {
         /* already closed */
       }

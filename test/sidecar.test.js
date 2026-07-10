@@ -1,3 +1,4 @@
+require('./helpers/store-env.js'); // must precede any core/ import
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
@@ -49,10 +50,12 @@ test('isWorking trusts the flag when the timestamp is missing or unparseable', (
   assert.equal(sidecar.isWorking({ working: true, workingSince: 'garbage' }, now), true);
 });
 
-test('sidecar roundtrips comments through the hidden file', () => {
+test('sidecar roundtrips comments through the store, leaving nothing beside the doc', () => {
   const md = tmpDoc();
   sidecar.writeComments(md, [{ id: 'c1', body: 'hi' }]);
-  assert.ok(fs.existsSync(path.join(path.dirname(md), '.doc.md.comments.json')));
+  // No co-located artifact — the whole point of the store.
+  assert.deepEqual(fs.readdirSync(path.dirname(md)), []);
+  assert.ok(fs.existsSync(sidecar.sidecarPath(md)));
   assert.deepEqual(sidecar.readComments(md), [{ id: 'c1', body: 'hi' }]);
 });
 
@@ -79,23 +82,36 @@ test('writeComments leaves no .tmp file behind', () => {
 test('writeComments preserves the existing sidecar when the write throws', () => {
   const md = tmpDoc();
   sidecar.writeComments(md, [{ id: 'good' }]);
-  // Force the tmp write to fail (read-only dir) after a valid sidecar exists.
-  const dir = path.dirname(md);
-  fs.chmodSync(dir, 0o555);
+  // The tmp now lives in the store, so chmod the store dir — chmod'ing the doc's
+  // dir no longer blocks anything. This guards the atomicity promise: a failed
+  // write leaves last-good comments intact.
+  const store = path.dirname(sidecar.sidecarPath(md));
+  fs.chmodSync(store, 0o555);
   try {
     assert.throws(() => sidecar.writeComments(md, [{ id: 'clobber' }]));
   } finally {
-    fs.chmodSync(dir, 0o755); // restore so readback + cleanup work
+    fs.chmodSync(store, 0o755); // restore so readback + cleanup work
   }
   assert.deepEqual(sidecar.readComments(md), [{ id: 'good' }]);
   assert.equal(fs.existsSync(sidecar.sidecarPath(md) + '.tmp'), false);
 });
 
-// mdPathForSidecar is the inverse of sidecarPath; the folder watcher relies on
-// it to map a changed sidecar back to its doc.
-test('mdPathForSidecar recovers the doc path and ignores non-sidecars', () => {
+test('empty write leaves no file on disk', () => {
   const md = tmpDoc();
-  assert.equal(sidecar.mdPathForSidecar(sidecar.sidecarPath(md)), md);
-  assert.equal(sidecar.mdPathForSidecar(md), null);
-  assert.equal(sidecar.mdPathForSidecar('/x/.doc.md.comments.json.corrupt'), null);
+  sidecar.writeComments(md, [{ id: 'c1' }]);
+  sidecar.writeComments(md, []);
+  assert.equal(fs.existsSync(sidecar.sidecarPath(md)), false);
+  assert.deepEqual(sidecar.readComments(md), []);
+});
+
+// readComments must stay pure: a doc whose comments live only in a legacy
+// co-located sidecar opens empty and that file is never touched.
+test('readComments ignores a legacy co-located sidecar and leaves it byte-identical', () => {
+  const md = tmpDoc();
+  const legacy = path.join(path.dirname(md), '.doc.md.comments.json');
+  const bytes = JSON.stringify({ version: 1, comments: [{ id: 'old' }] });
+  fs.writeFileSync(legacy, bytes);
+  const before = fs.readFileSync(legacy);
+  assert.deepEqual(sidecar.readComments(md), []);
+  assert.deepEqual(fs.readFileSync(legacy), before);
 });

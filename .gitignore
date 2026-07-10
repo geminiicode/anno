@@ -5,10 +5,6 @@ node_modules
 dist/
 out/
 
-# Comment sidecars are per-user document data, not source
-*.comments.json
-.*.comments.json
-
 # Logs / OS cruft
 *.log
 .DS_Store

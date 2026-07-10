@@ -1,7 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const sidecar = require('../core/sidecar');
-const { listMarkdownFiles, listDirs, pathInScope } = require('../core/fs-walk');
+const { listMarkdownFiles } = require('../core/fs-walk');
+const { canonical, storeRoot, seedStoreIndex } = require('../core/paths');
+const { createStoreRouter } = require('../core/store-router');
 const { addressCore, errorStrandedWorking } = require('./address');
 const { killActiveChild } = require('./claude');
 const { createAddressQueue } = require('./address-queue');
@@ -95,40 +97,11 @@ async function runBatch(md, { session, sentManifest }, deps) {
   return { session, sentManifest, result };
 }
 
-function startTreeWatch(rootDir, recursive, onChange) {
-  try {
-    return [fs.watch(rootDir, { recursive }, (_e, filename) => onChange(rootDir, filename))];
-  } catch (err) {
-    if (!recursive || err.code !== 'ERR_FEATURE_UNAVAILABLE_ON_PLATFORM') throw err;
-    // recursive watch unsupported (Linux): watch each dir; skip unwatchable ones rather than abort
-    console.log(
-      "Recursive watch unavailable on this platform; watching each subdirectory " +
-        "(new subdirectories won't be auto-watched)."
-    );
-    const dirs = listDirs(rootDir);
-    const watchers = dirs
-      .map((d) => {
-        try {
-          return fs.watch(d, (_e, filename) => onChange(d, filename));
-        } catch (e) {
-          console.error(`Could not watch ${d}: ${e.message}`);
-          return null;
-        }
-      })
-      .filter(Boolean);
-    // inotify ENOSPC would otherwise stop auto-addressing part of the tree silently.
-    if (watchers.length < dirs.length) {
-      console.warn(
-        `Only watching ${watchers.length}/${dirs.length} directories ` +
-          '(raise fs.inotify.max_user_watches?); some files won\'t auto-address.'
-      );
-    }
-    return watchers;
-  }
-}
-
 function watch(target, { ownSigint = true } = {}) {
-  const abs = path.resolve(target);
+  // canonical (not path.resolve): `doc` in the store is canonical(mdPath), so a
+  // symlinked `anno review` target would make the file-tab `resolved === abs`
+  // check fail and the daemon silently drop its own writes.
+  const abs = canonical(path.resolve(target));
   if (!fs.existsSync(abs)) {
     console.error(`Path not found: ${target}`);
     process.exit(1);
@@ -196,28 +169,22 @@ function watch(target, { ownSigint = true } = {}) {
     }
   };
 
-  // never address a doc outside the watched tree, so this daemon can't end up
-  // writing a file another agent also owns (the dual-writer footgun)
-  function consider(baseDir, filename) {
-    if (!filename) return;
-    const md = sidecar.mdPathForSidecar(path.join(baseDir, filename));
-    if (!md) return;
-    const resolved = path.resolve(md);
-    if (!isDir) {
-      if (resolved !== abs) return;
-    } else {
-      if (!pathInScope(watchDir, resolved)) return;
-      // pathInScope is textual — resolve the real path so a symlinked-out .md
-      // can't smuggle in an out-of-tree write.
-      try {
-        const realRoot = fs.realpathSync(watchDir);
-        if (!fs.realpathSync(resolved).startsWith(realRoot + path.sep)) return;
-      } catch {
-        return; // unresolvable → don't risk addressing it
-      }
-    }
-    queue.enqueue(resolved);
+  // An insecure store (assertStore) is fatal here, not degraded: the store is the
+  // daemon's only trigger, and we won't auto-edit a user's files off one we don't trust.
+  let storeIndex;
+  try {
+    storeIndex = seedStoreIndex();
+  } catch (err) {
+    console.error(err.message);
+    process.exit(1);
   }
+  const routeStore = createStoreRouter({
+    enqueue: (md) => queue.enqueue(md),
+    isDir,
+    abs,
+    watchDir,
+    index: storeIndex,
+  });
 
   // Install SIGINT before the banner so a Ctrl-C in the gap can't hit the default disposition.
   // review() owns SIGINT (tears down editor); don't add a second handler.
@@ -242,10 +209,34 @@ function watch(target, { ownSigint = true } = {}) {
   }, 2000);
   ppidPoll.unref(); // the poll alone shouldn't keep us alive
 
+  // The store is the daemon's only trigger (md edits never scheduled a run). Flat
+  // dir → non-recursive watch, so no Linux ERR_FEATURE_UNAVAILABLE fallback. Failing
+  // to watch it is fatal, not a warning.
+  const armStoreWatch = () => {
+    const w = fs.watch(storeRoot(), (_e, filename) => routeStore(filename));
+    // FSWatcher emits 'error' at runtime (store dir deleted/recreated, Linux inotify
+    // ENOSPC); unhandled it throws and kills the daemon. Re-arm rather than go deaf —
+    // a re-arm that itself throws (store truly gone) is fatal, like the first watch.
+    w.on('error', (err) => {
+      console.error('Store watch error, re-arming:', err.message);
+      try {
+        w.close();
+      } catch {
+        /* already dead */
+      }
+      try {
+        watchers = [armStoreWatch()];
+      } catch (e) {
+        console.error('Failed to re-watch the comment store:', e.message);
+        process.exit(1);
+      }
+    });
+    return w;
+  };
   try {
-    watchers = startTreeWatch(watchDir, isDir, consider);
+    watchers = [armStoreWatch()];
   } catch (err) {
-    console.error('Failed to start watcher:', err.message);
+    console.error('Failed to watch the comment store:', err.message);
     process.exit(1);
   }
 
@@ -285,6 +276,7 @@ function watch(target, { ownSigint = true } = {}) {
 
 module.exports = {
   watch,
+  createStoreRouter,
   listMarkdownFiles,
   FILE_WARN_THRESHOLD,
   runBatch,

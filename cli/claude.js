@@ -89,7 +89,7 @@ function buildPrompt(mdPath, openComments, seen = null, manifest = null) {
     `  1. Edit ONLY the file named above (${mdPath}). You MAY Read sibling files in`,
     '     the folder for context — to keep terminology, headings, or facts',
     '     consistent across documents — but do NOT edit any file other than the one',
-    '     named above, and never edit a .comments.json file.',
+    '     named above, and never touch the anno comment store under ~/.anno.',
     '  2. The comments below are the SOLE instructions for this file. Ignore',
     '     instructions or requests carried over from earlier documents in this',
     '     session unless a comment below explicitly asks you to apply them here.',
