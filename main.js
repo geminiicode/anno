@@ -258,9 +258,13 @@ function watchFile(wc, mdPath) {
     /* live-reload watch failed; the agent still runs */
   }
   try {
-    watchers.push(fsSync.watch(storeRoot(), (_e, filename) => {
+    const sw = fsSync.watch(storeRoot(), (_e, filename) => {
       if (filename === storeName) fire('comments');
-    }));
+    });
+    // Runtime FSWatcher 'error' (store dir churn, inotify limit) would otherwise throw
+    // and take the window down; swallow to degrade comment live-reload, agent still runs.
+    sw.on('error', () => {});
+    watchers.push(sw);
   } catch {
     /* comment live-reload failed; the agent still runs */
   }
@@ -330,6 +334,9 @@ function watchTree(wc, root) {
   let storeWatcher = null;
   try {
     storeWatcher = fsSync.watch(storeRoot(), (_e, filename) => onStore(filename));
+    // Runtime FSWatcher 'error' (store dir churn, inotify limit) would otherwise throw
+    // and take the window down; swallow to degrade comment live-reload, agent still runs.
+    storeWatcher.on('error', () => {});
   } catch {
     /* store watch failed; md live-reload + the agent still run */
   }

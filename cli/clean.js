@@ -55,7 +55,17 @@ function cleanStore(prefix, force) {
     const doc = storeDocOf(name);
     if (!doc) continue; // unparseable entry: can't scope it, leave it alone
     if (!underPrefix(canonical(doc), prefixCanon)) continue;
-    if (!fs.existsSync(doc)) targets.push(full); // doc is gone → orphan
+    // existsSync also reads false on EACCES / EIO / an unmounted volume / a worktree
+    // branch that simply lacks this doc — reaping any of those destroys live comments.
+    // Only a real ENOENT means the doc is actually gone.
+    let orphan = false;
+    try {
+      fs.statSync(doc);
+    } catch (e) {
+      if (e.code !== 'ENOENT') continue; // transient/unreadable → not an orphan, leave it
+      orphan = true;
+    }
+    if (orphan) targets.push(full);
   }
   remove(targets, force);
   if (corrupt) {

@@ -58,6 +58,15 @@ function tmpDoc(comments) {
 
 // Wait for a spawned child (with a piped stdout) to print its "Watching …" banner
 // so we know the ppid poll + watchers are installed before we act on it.
+// A stub `claude` on PATH that drains stdin and exits non-zero, so a live address
+// run resolves to a concrete, hermetic outcome (addressCore → markErrored) with no
+// real Claude CLI, network, or file edit. Returns the dir to prepend to PATH.
+function fakeClaudeBin() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'anno-fake-claude-'));
+  fs.writeFileSync(path.join(dir, 'claude'), '#!/bin/sh\ncat >/dev/null 2>&1\nexit 1\n', { mode: 0o755 });
+  return dir;
+}
+
 function waitForBanner(child) {
   return new Promise((resolve) => {
     let buf = '';
@@ -232,5 +241,32 @@ test('parent death → daemon self-exits via the ppid poll', async () => {
   } finally {
     if (daemonPid && alive(daemonPid)) process.kill(daemonPid, 'SIGKILL');
     if (alive(parent.pid)) parent.kill('SIGKILL');
+  }
+});
+
+// The live watcher, end to end: a comment written AFTER the daemon is already
+// running can only be picked up by the runtime fs.watch(storeRoot()) registration
+// (cli/watch.js) — the startup scan already ran with no store file present. A
+// regression that breaks that registration (wrong dir, filename parsing, a coalesced
+// event) would pass every router unit test above while the daemon silently goes deaf.
+// The stub claude fails, so the observable outcome is the comment flipping to errored.
+test('a store write while running triggers a live address run', async () => {
+  const { root, md } = tmpTree(); // doc exists, but NO comment/store file yet
+  const binDir = fakeClaudeBin();
+  const child = spawn(process.execPath, [DAEMON, root], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, PATH: `${binDir}${path.delimiter}${process.env.PATH}` },
+  });
+  try {
+    await waitForBanner(child); // watchers installed; startup scan saw an empty tree
+    writeComments(md, [{ id: 'live1', quote: 'text', body: 'do a thing', status: 'open' }]);
+    // 5s debounce + stub spawn; generous ceiling so a slow CI box doesn't flake.
+    const errored = await waitFor(
+      () => readComments(md).find((c) => c.id === 'live1' && c.status === 'errored'),
+      { timeout: 20000, label: 'live comment picked up by the running daemon' }
+    );
+    assert.equal(errored.status, 'errored', 'daemon must react to a store write made after it began watching');
+  } finally {
+    child.kill('SIGKILL');
   }
 });

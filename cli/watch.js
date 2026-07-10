@@ -213,8 +213,30 @@ function watch(target, { ownSigint = true } = {}) {
   // address run, and md edits never did. Flat dir, so no recursive watch and no
   // Linux ERR_FEATURE_UNAVAILABLE_ON_PLATFORM fallback. Without it there is nothing
   // to auto-address, so failing to watch is fatal, not a warning.
+  const armStoreWatch = () => {
+    const w = fs.watch(storeRoot(), (_e, filename) => routeStore(filename));
+    // FSWatcher emits 'error' at RUNTIME — the store dir deleted/recreated, or Linux
+    // inotify ENOSPC. Unhandled it throws and kills the daemon; but the store is our
+    // only trigger, so tear down the dead watcher and re-arm rather than go deaf. A
+    // re-arm that itself throws (store truly gone) is fatal, same as the first watch.
+    w.on('error', (err) => {
+      console.error('Store watch error, re-arming:', err.message);
+      try {
+        w.close();
+      } catch {
+        /* already dead */
+      }
+      try {
+        watchers = [armStoreWatch()];
+      } catch (e) {
+        console.error('Failed to re-watch the comment store:', e.message);
+        process.exit(1);
+      }
+    });
+    return w;
+  };
   try {
-    watchers = [fs.watch(storeRoot(), (_e, filename) => routeStore(filename))];
+    watchers = [armStoreWatch()];
   } catch (err) {
     console.error('Failed to watch the comment store:', err.message);
     process.exit(1);

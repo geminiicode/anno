@@ -30,24 +30,28 @@ function createStoreRouter({ enqueue, isDir, abs, watchDir, index }) {
     const hash = filename.slice(0, 64);
     let doc = storeDocOf(filename);
     let unlinked = false;
-    if (doc) {
-      index.set(hash, doc); // §4.3 rule 2: keep the index warm for a later unlink
-    } else {
+    if (!doc) {
       doc = index.get(hash); // unreadable = an empty-list delete (unlink); route via index
       if (!doc) return; // unknown hash + unreadable file → drop, not an error
       unlinked = true;
     }
     const resolved = path.resolve(doc);
-    if (!inScope({ isDir, abs, watchDir }, resolved)) return;
+    if (!inScope({ isDir, abs, watchDir }, resolved)) {
+      // Never index an out-of-scope doc (the store is global — every window's writes
+      // reach us), and if this was its unlink, evict any entry that predates the gating.
+      if (unlinked) index.delete(hash);
+      return;
+    }
+    // File is gone; drop the entry BEFORE returning, or a stray second unlink for this
+    // hash would re-route to a doc whose store no longer exists. On create/change, keep
+    // the index warm (§4.3 rule 2) so that doc's eventual unlink can still be routed.
+    if (unlinked) index.delete(hash);
+    else index.set(hash, doc);
     // §4.3 rule 3: enqueue the validated path ONLY. addressCore re-reads via
     // readComments(resolved), which re-hashes the path to its store file. Do NOT
     // reuse the object storeDocOf parsed — that would let a crafted file pass the
     // scope check with `doc` while smuggling comments in through its own contents.
     enqueue(resolved);
-    // File is gone; drop the entry or a stray second unlink for this hash would
-    // re-route to a doc whose store no longer exists. Unlink path only — a
-    // create/change re-set it above and its file is still there.
-    if (unlinked) index.delete(hash);
   };
 }
 
