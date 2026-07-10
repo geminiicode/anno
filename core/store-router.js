@@ -20,7 +20,7 @@ function inScope({ isDir, abs, watchDir }, resolved) {
 }
 
 // Shared by the CLI daemon and the GUI folder watch so both route through the same
-// strict guard. Exported so the guard is unit-testable against a mock { enqueue }.
+// strict guard.
 function createStoreRouter({ enqueue, isDir, abs, watchDir, index }) {
   return function routeStoreEvent(filename) {
     if (!filename || !STORE_FILE_RE.test(filename)) return; // skip .tmp/.corrupt
