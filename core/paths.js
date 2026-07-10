@@ -13,10 +13,8 @@ function canonical(p) {
   }
 }
 
-// Asserted, not requested: mkdirSync's mode is umask-masked on create and no-ops
-// on an existing dir, so an older anno (or an attacker) that made this 0o755
-// leaves it wide open and the mode arg never fires. The stat is the actual guard.
-// getuid is POSIX-only; anno ships macOS + Linux.
+// mkdir's mode is umask-masked and no-ops on an existing dir, so the mode arg can't
+// be trusted — the stat below is the real guard. getuid is POSIX-only (macOS + Linux).
 function assertStore(root) {
   fs.mkdirSync(root, { recursive: true, mode: 0o700 });
   const st = fs.statSync(root);
@@ -28,9 +26,8 @@ function assertStore(root) {
   }
 }
 
-// Memoized per process: storePath() is called per watcher event and per comment
-// read, and a path function must not mkdir on every call. A startup guard is what
-// this is — a mid-session chmod is out of scope.
+// Memoized: storePath() runs per watcher event and per read, so it must not mkdir
+// every call. Startup guard only — a mid-session chmod is out of scope.
 let checked = null;
 function storeRoot() {
   const root = process.env.ANNO_STORE_DIR || path.join(os.homedir(), '.anno', 'store');
@@ -46,14 +43,12 @@ function storePath(mdPath) {
   return path.join(storeRoot(), hash + '.json');
 }
 
-// Exact <sha256>.json — deliberately excludes <hash>.json.<pid>.tmp (valid JSON
-// about to vanish) and <hash>.json.corrupt (already quarantined), which an
-// unfiltered store watcher would parse and enqueue for a dead file (§4.3 rule 1).
+// Exact <sha256>.json — excludes the .<pid>.tmp (about to vanish) and .corrupt
+// (quarantined) siblings a watcher would otherwise enqueue for a dead file.
 const STORE_FILE_RE = /^[0-9a-f]{64}\.json$/;
 
-// Read the `doc` reverse-mapping out of one store file; null on any read/parse
-// failure. Never returns the comments — watcher routing must re-read those by the
-// validated path, never trust this file's contents as the payload (§4.3 rule 3).
+// The `doc` reverse-mapping only; null on any failure. Never returns the comments —
+// routing must re-read those by the validated path, not trust this file's payload.
 function storeDocOf(filename) {
   try {
     const doc = JSON.parse(fs.readFileSync(path.join(storeRoot(), filename), 'utf8')).doc;
@@ -63,9 +58,8 @@ function storeDocOf(filename) {
   }
 }
 
-// hash → doc index, seeded by scanning the store at startup. Unlink events carry
-// no readable contents (empty-list delete removes the file), so this index is
-// what routes a delete back to its document (§4.3 rule 2).
+// hash → doc index for routing unlinks: a delete removes the file, so its contents
+// are gone and only this seeded mapping can point the event back at its document.
 function seedStoreIndex() {
   const index = new Map();
   let names;

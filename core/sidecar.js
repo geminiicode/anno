@@ -62,11 +62,10 @@ function readComments(mdPath) {
   return Array.isArray(data.comments) ? data.comments : [];
 }
 
-// tmp + atomic rename so a crash mid-write can't truncate the live sidecar. Pid
-// in the tmp name: GUI and watch daemon both write the same sidecar, and a shared
-// tmp name would let one writer's rename pull the file from under the other → ENOENT.
-// Empty list unlinks rather than leaving a husk; readComments treats missing as [],
-// so this is behavior-neutral. Delete-event routing is the watcher index's job (§4.3).
+// tmp + atomic rename so a crash mid-write can't truncate the live file. Pid in the
+// tmp name: GUI and daemon write the same file, and a shared tmp name would let one
+// writer's rename yank the file from under the other → ENOENT. Empty list unlinks
+// (readComments treats missing as []); the watcher index routes the delete event.
 function writeComments(mdPath, comments) {
   const p = sidecarPath(mdPath);
   if (comments.length === 0) {

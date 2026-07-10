@@ -94,7 +94,7 @@ const makeRouter = (root, enqueued, index = new Map()) =>
   createStoreRouter({ enqueue: (p) => enqueued.push(p), isDir: true, abs: root, watchDir: root, index });
 
 // (a) scope guard: a store file whose `doc` resolves outside the watched tree is
-// dropped — this is the last guard now that the trigger left the tree (§5).
+// dropped — the last guard now that the trigger left the tree.
 test('store router: a doc outside the watched tree never enqueues', () => {
   const { root } = tmpTree();
   const outside = path.join(os.tmpdir(), 'anno-elsewhere', 'evil.md');

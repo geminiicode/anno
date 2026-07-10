@@ -2,14 +2,13 @@ const fs = require('fs');
 const path = require('path');
 const { storeRoot, storeDocOf, canonical, STORE_FILE_RE } = require('../core/paths');
 
-// Reported, never deleted. A .corrupt is the user's only copy of comments the
-// corrupt-file dialog promised were recoverable, and it's unparseable by
-// definition — so it can't be scoped to <prefix>, and reaping it here would
+// Reported, never deleted: a .corrupt is the user's only copy of a doc's comments,
+// and being unparseable it can't be scoped to <prefix> — reaping it here could
 // destroy another tree's backup.
 const STORE_CORRUPT_RE = /^[0-9a-f]{64}\.json\.corrupt$/;
 
-// Legacy co-located sidecars and their siblings: .<base>.comments.json plus
-// .corrupt / .<pid>.tmp. Never read — v1 is unreadable litter (§4.5).
+// Legacy co-located sidecars + siblings: .<base>.comments.json plus .corrupt /
+// .<pid>.tmp. Never read — v1 is unreadable litter, only swept.
 const LEGACY_RE = /\.comments\.json(\.corrupt|\.\d+\.tmp)?$/;
 
 function escapeRe(s) {
@@ -27,10 +26,8 @@ function remove(targets, force) {
   else if (!force) console.log(`\n${targets.length} item(s) — re-run with --force to remove.`);
 }
 
-// A missing doc means "not here right now" (branch switch, worktree, unmounted
-// volume), NOT deleted — so this is prefix-scoped, dry-run by default, and never
-// runs on its own (§4.4). Only entries whose doc canonicalizes under <prefix> are
-// even considered, so a stat miss on some other tree's doc can't reap it.
+// Prefix-scoped, dry-run by default, never automatic: only entries whose doc
+// canonicalizes under <prefix> are considered, so another tree's doc can't be reaped.
 function cleanStore(prefix, force) {
   const prefixCanon = canonical(path.resolve(prefix));
   const root = storeRoot();
@@ -127,8 +124,8 @@ function clean(args) {
   const force = args.includes('--force');
   const legacy = args.includes('--legacy');
   const prefix = args.find((a) => !a.startsWith('--'));
-  // An explicit prefix is mandatory: a storewide sweep would reap another
-  // branch's comments on a transient absence (§4.4).
+  // Explicit prefix mandatory: a storewide sweep would reap another branch's
+  // comments on a transient absence.
   if (!prefix) {
     usage();
     process.exit(1);

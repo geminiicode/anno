@@ -105,7 +105,7 @@ test('empty write leaves no file on disk', () => {
 });
 
 // readComments must stay pure: a doc whose comments live only in a legacy
-// co-located sidecar opens empty and that file is never touched (§4.5).
+// co-located sidecar opens empty and that file is never touched.
 test('readComments ignores a legacy co-located sidecar and leaves it byte-identical', () => {
   const md = tmpDoc();
   const legacy = path.join(path.dirname(md), '.doc.md.comments.json');

@@ -209,16 +209,14 @@ function watch(target, { ownSigint = true } = {}) {
   }, 2000);
   ppidPoll.unref(); // the poll alone shouldn't keep us alive
 
-  // The store is the daemon's only trigger — a comment write is what schedules an
-  // address run, and md edits never did. Flat dir, so no recursive watch and no
-  // Linux ERR_FEATURE_UNAVAILABLE_ON_PLATFORM fallback. Without it there is nothing
-  // to auto-address, so failing to watch is fatal, not a warning.
+  // The store is the daemon's only trigger (md edits never scheduled a run). Flat
+  // dir → non-recursive watch, so no Linux ERR_FEATURE_UNAVAILABLE fallback. Failing
+  // to watch it is fatal, not a warning.
   const armStoreWatch = () => {
     const w = fs.watch(storeRoot(), (_e, filename) => routeStore(filename));
-    // FSWatcher emits 'error' at RUNTIME — the store dir deleted/recreated, or Linux
-    // inotify ENOSPC. Unhandled it throws and kills the daemon; but the store is our
-    // only trigger, so tear down the dead watcher and re-arm rather than go deaf. A
-    // re-arm that itself throws (store truly gone) is fatal, same as the first watch.
+    // FSWatcher emits 'error' at runtime (store dir deleted/recreated, Linux inotify
+    // ENOSPC); unhandled it throws and kills the daemon. Re-arm rather than go deaf —
+    // a re-arm that itself throws (store truly gone) is fatal, like the first watch.
     w.on('error', (err) => {
       console.error('Store watch error, re-arming:', err.message);
       try {
